@@ -150,7 +150,7 @@ export function startHost({ name, bots, onRoom, onStatus }) {
     }
 
     const events = step(world, inputs, TICK);
-    handleEvents(events, world);
+    handleEvents(events, world, HOST_ID);
     pendingEvents.push(...events);
 
     if (++tick % SNAPSHOT_EVERY === 0) broadcast();

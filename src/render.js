@@ -1,14 +1,30 @@
 // Piirtäminen ja visuaaliset efektit. Ei vaikuta pelin tilaan.
 
 import {
-  ARENA_W, ARENA_H, OBSTACLES, VIEW_W, VIEW_H,
-  PLAYER_RADIUS, PLAYER_HP, BULLET_RADIUS,
+  ARENA_W, ARENA_H, OBSTACLES, WINDOWS, LAMPS, VIEW_W, VIEW_H,
+  PLAYER_RADIUS, PLAYER_HP, BULLET_RADIUS, ZOMBIE_RADIUS,
   TARGET_SCORE, WIN_POINTS, ZONE_DELAY,
 } from './constants.js';
+import { lineOfSight } from './geometry.js';
+
+const WALL = 22;              // ulkoseinän paksuus (piirretään areenan ulkopuolelle)
+const DARKNESS = 'rgba(3, 4, 7, 0.95)';
+const OUT_OF_SIGHT = 'rgb(3, 4, 7)';  // seinien taakse ei näe yhtään
+const AURA_RADIUS = 110;          // valopiiri pelaajan ympärillä
+const FLASHLIGHT_RANGE = 440;     // taskulampun keilan pituus
+const FLASHLIGHT_HALF_ANGLE = 0.42; // keilan puolikas leveys (rad)
+const EYE_RANGE = 650;            // zombien silmät näkyvät pimeässä tähän asti
+const FOG_COLOR = '#8bc34a';
+const ZOMBIE_COLOR = '#7d9a52';
+const BLOOD = '#6b0f12';
+const ROUND_RED = '#b3121b';
 
 const particles = [];
 const killFeed = [];
-const ZONE_COLOR = '#ff5252';
+const decals = [];            // verijäljet lattiassa
+let hurtFlash = 0;
+let floorCanvas = null;
+let lightCanvas = null;
 
 export const camera = { x: ARENA_W / 2, y: ARENA_H / 2, zoom: 1 };
 
@@ -26,10 +42,25 @@ export function screenToWorld(sx, sy) {
   };
 }
 
+function worldToScreen(x, y) {
+  return {
+    x: (x - camera.x) * camera.zoom + window.innerWidth / 2,
+    y: (y - camera.y) * camera.zoom + window.innerHeight / 2,
+  };
+}
+
+// Kamera seuraa kohdetta, mutta ei näytä paljon tyhjää kartan ulkopuolelta.
 export function followCamera(target, dt) {
   const k = 1 - Math.exp(-dt * 10);
-  camera.x += (target.x - camera.x) * k;
-  camera.y += (target.y - camera.y) * k;
+  const margin = 60;
+  const tx = clampRange(target.x, VIEW_W / 2 - margin, ARENA_W - VIEW_W / 2 + margin);
+  const ty = clampRange(target.y, VIEW_H / 2 - margin, ARENA_H - VIEW_H / 2 + margin);
+  camera.x += (tx - camera.x) * k;
+  camera.y += (ty - camera.y) * k;
+}
+
+function clampRange(v, min, max) {
+  return min > max ? (min + max) / 2 : Math.min(max, Math.max(min, v));
 }
 
 // Kenen perässä kamera kulkee: oma hahmo, tai kuolleena tappaja tai joku elossa oleva.
@@ -43,16 +74,28 @@ export function cameraTarget(world, localId) {
 }
 
 // Muuttaa simulaation tapahtumat efekteiksi.
-export function handleEvents(events, world) {
+export function handleEvents(events, world, localId) {
   for (const e of events) {
     if (e.type === 'hit') {
       burst(e.x, e.y, world.players[e.target]?.color || '#fff', 8, 140);
+      if (e.target === localId) hurtFlash = 0.6;
     } else if (e.type === 'wall') {
       burst(e.x, e.y, '#8a93a6', 4, 90);
+    } else if (e.type === 'zhit') {
+      burst(e.x, e.y, BLOOD, 6, 120);
+    } else if (e.type === 'zkill') {
+      burst(e.x, e.y, BLOOD, 18, 200);
+      burst(e.x, e.y, ZOMBIE_COLOR, 6, 120);
+      addDecal(e.x, e.y, 14 + Math.random() * 12);
+    } else if (e.type === 'zattack') {
+      burst(e.x, e.y, '#c62828', 10, 160);
+      if (e.target === localId) hurtFlash = 1;
     } else if (e.type === 'kill') {
       burst(e.x, e.y, world.players[e.victim]?.color || '#fff', 30, 260);
+      addDecal(e.x, e.y, 22 + Math.random() * 10);
       killFeed.push({
         killer: e.killer ? world.players[e.killer] : null,
+        cause: e.cause || 'player',
         victim: world.players[e.victim],
         time: performance.now(),
       });
@@ -69,88 +112,261 @@ function burst(x, y, color, count, speed) {
   }
 }
 
+function addDecal(x, y, r) {
+  const blobs = [];
+  for (let i = 0; i < 5; i++) {
+    blobs.push({ dx: (Math.random() - 0.5) * r, dy: (Math.random() - 0.5) * r, r: r * (0.3 + Math.random() * 0.5) });
+  }
+  decals.push({ x, y, blobs });
+  if (decals.length > 120) decals.shift();
+}
+
 // alpha = kuinka pitkällä ollaan nykyisen ja seuraavan tickin välissä (sulava liike yli 60 Hz näytöillä).
 export function render(ctx, world, localId, alpha, dt) {
   const dpr = window.devicePixelRatio || 1;
   const w = window.innerWidth;
   const h = window.innerHeight;
+  const now = performance.now() / 1000;
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#0d0f14';
+  ctx.fillStyle = '#050608';
   ctx.fillRect(0, 0, w, h);
 
   // --- Maailma ---
   ctx.save();
-  ctx.translate(w / 2, h / 2);
-  ctx.scale(camera.zoom, camera.zoom);
-  ctx.translate(-camera.x, -camera.y);
-
+  applyCamera(ctx, w, h);
   drawFloor(ctx);
+  drawWalls(ctx);
 
   ctx.fillStyle = '#ffe9a8';
   for (const b of world.bullets) {
-    const x = lerp(b.px, b.x, alpha);
-    const y = lerp(b.py, b.y, alpha);
     ctx.beginPath();
-    ctx.arc(x, y, BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.arc(lerp(b.px, b.x, alpha), lerp(b.py, b.y, alpha), BULLET_RADIUS, 0, Math.PI * 2);
     ctx.fill();
   }
-
+  for (const z of world.zombies || []) drawZombie(ctx, z, alpha);
   for (const p of Object.values(world.players)) {
     if (p.alive) drawPlayer(ctx, p, alpha, p.id === localId);
   }
-
   drawParticles(ctx, dt);
-  if (world.zone) drawZone(ctx, world.zone);
+  ctx.restore();
+
+  // --- Valot ja pimeys. Katsoja on oma hahmo tai se, jota kuolleena seurataan. ---
+  const target = cameraTarget(world, localId);
+  const viewer = target ? { x: lerp(target.px, target.x, alpha), y: lerp(target.py, target.y, alpha) } : null;
+  const sight = viewer ? visibilityPolygon(viewer.x, viewer.y) : null;
+  drawLighting(ctx, world, alpha, now, w, h, dpr, sight);
+
+  // --- Pimeyden päälle: seinien ääriviivat, sumu, nimet ja zombien silmät ---
+  ctx.save();
+  applyCamera(ctx, w, h);
+  drawWallOutlines(ctx);
+  if (world.zone) drawFog(ctx, world.zone, now);
+  for (const p of Object.values(world.players)) {
+    if (!p.alive) continue;
+    const x = lerp(p.px, p.x, alpha);
+    const y = lerp(p.py, p.y, alpha);
+    if (p === target || !viewer || lineOfSight(viewer.x, viewer.y, x, y)) drawPlayerLabel(ctx, p, alpha);
+  }
+  if (viewer) drawZombieEyes(ctx, world.zombies || [], viewer, alpha);
   ctx.restore();
 
   // --- HUD ---
-  drawHud(ctx, world, localId, w, h);
+  drawHud(ctx, world, localId, w, h, dt);
+}
+
+function applyCamera(ctx, w, h) {
+  ctx.translate(w / 2, h / 2);
+  ctx.scale(camera.zoom, camera.zoom);
+  ctx.translate(-camera.x, -camera.y);
+}
+
+// --- Kartta ---
+
+function makeCanvas(w, h) {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+// Pseudosatunnainen, aina sama: lattia näyttää kaikilla samalta.
+function seeded(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+// Betonilaattalattia tahroineen piirretään kerran valmiiksi.
+function buildFloor() {
+  const c = makeCanvas(ARENA_W, ARENA_H);
+  if (!c) return null;
+  const g = c.getContext('2d');
+  const rand = seeded(1234);
+
+  g.fillStyle = '#121416';
+  g.fillRect(0, 0, ARENA_W, ARENA_H);
+  for (let y = 0; y < ARENA_H; y += 100) {
+    for (let x = 0; x < ARENA_W; x += 100) {
+      const s = Math.round(26 + rand() * 9);
+      g.fillStyle = `rgb(${s}, ${s + 1}, ${s + 3})`;
+      g.fillRect(x + 1, y + 1, 98, 98);
+    }
+  }
+  const stain = (x, y, r, color) => {
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  };
+  for (let i = 0; i < 45; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 25 + rand() * 80, 'rgba(0,0,0,0.35)');
+  for (let i = 0; i < 12; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 15 + rand() * 30, 'rgba(80,8,10,0.35)');
+
+  g.strokeStyle = 'rgba(0,0,0,0.55)';
+  g.lineWidth = 1;
+  for (let i = 0; i < 30; i++) {
+    let x = rand() * ARENA_W;
+    let y = rand() * ARENA_H;
+    g.beginPath();
+    g.moveTo(x, y);
+    for (let k = 0; k < 4; k++) {
+      x += (rand() - 0.5) * 50;
+      y += (rand() - 0.5) * 50;
+      g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+  return c;
 }
 
 function drawFloor(ctx) {
-  ctx.fillStyle = '#161a22';
-  ctx.fillRect(0, 0, ARENA_W, ARENA_H);
-
-  ctx.strokeStyle = '#1e2330';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let x = 0; x <= ARENA_W; x += 50) {
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, ARENA_H);
+  if (!floorCanvas) floorCanvas = buildFloor();
+  if (floorCanvas) {
+    ctx.drawImage(floorCanvas, 0, 0);
+  } else {
+    ctx.fillStyle = '#1c1e21';
+    ctx.fillRect(0, 0, ARENA_W, ARENA_H);
   }
-  for (let y = 0; y <= ARENA_H; y += 50) {
-    ctx.moveTo(0, y);
-    ctx.lineTo(ARENA_W, y);
-  }
-  ctx.stroke();
 
-  ctx.strokeStyle = '#3a4252';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(0, 0, ARENA_W, ARENA_H);
-
-  for (const r of OBSTACLES) {
-    ctx.fillStyle = '#2b3140';
-    ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = '#353c4e';
-    ctx.fillRect(r.x, r.y, r.w, 6);
+  ctx.fillStyle = 'rgba(95, 10, 14, 0.75)';
+  for (const d of decals) {
+    for (const b of d.blobs) {
+      ctx.beginPath();
+      ctx.arc(d.x + b.dx, d.y + b.dy, b.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
-// Alueen ulkopuoli tummennetaan punertavaksi, reunalle viiva.
-function drawZone(ctx, z) {
-  const pad = 2000;
-  ctx.beginPath();
-  ctx.rect(-pad, -pad, ARENA_W + 2 * pad, ARENA_H + 2 * pad);
-  ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2, true);
-  ctx.fillStyle = '#ff525226';
-  ctx.fill('evenodd');
+function drawWalls(ctx) {
+  // Ulkoseinät
+  ctx.fillStyle = '#2b2e34';
+  ctx.fillRect(-WALL, -WALL, ARENA_W + 2 * WALL, WALL);
+  ctx.fillRect(-WALL, ARENA_H, ARENA_W + 2 * WALL, WALL);
+  ctx.fillRect(-WALL, 0, WALL, ARENA_H);
+  ctx.fillRect(ARENA_W, 0, WALL, ARENA_H);
+  for (const win of WINDOWS) drawWindow(ctx, win);
 
+  for (const r of OBSTACLES) {
+    if (r.crate) {
+      ctx.fillStyle = '#5a4026';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.strokeStyle = '#3a2916';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+      ctx.beginPath();
+      ctx.moveTo(r.x + 4, r.y + 4);
+      ctx.lineTo(r.x + r.w - 4, r.y + r.h - 4);
+      ctx.moveTo(r.x + r.w - 4, r.y + 4);
+      ctx.lineTo(r.x + 4, r.y + r.h - 4);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#3a3e45';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.fillStyle = '#4a4f57';
+      ctx.fillRect(r.x, r.y, r.w, 4);
+      ctx.fillStyle = '#26292e';
+      ctx.fillRect(r.x, r.y + r.h - 3, r.w, 3);
+    }
+  }
+}
+
+// Ikkuna-aukko ulkoseinässä ja sen yli naulatut laudat.
+function drawWindow(ctx, win) {
+  const len = 70;
+  const vertical = win.side === 'left' || win.side === 'right';
+  const cx = win.side === 'left' ? -WALL / 2 : win.side === 'right' ? ARENA_W + WALL / 2 : win.x;
+  const cy = win.side === 'top' ? -WALL / 2 : win.side === 'bottom' ? ARENA_H + WALL / 2 : win.y;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (vertical) ctx.rotate(Math.PI / 2);
+  ctx.fillStyle = '#050607';
+  ctx.fillRect(-len / 2, -WALL / 2, len, WALL);
+  const tilt = [-0.12, 0.08, -0.04];
+  tilt.forEach((a, i) => {
+    ctx.save();
+    ctx.translate(0, (i - 1) * 6);
+    ctx.rotate(a);
+    ctx.fillStyle = i === 1 ? '#7a5634' : '#6a4a2c';
+    ctx.fillRect(-len / 2 - 4, -2.5, len + 8, 5);
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// --- Hahmot ---
+
+function drawZombie(ctx, z, alpha) {
+  const x = lerp(z.px ?? z.x, z.x, alpha);
+  const y = lerp(z.py ?? z.y, z.y, alpha);
+  const emerging = z.emerging ?? z.emerge > 0;
+  const a = z.angle;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a);
+  if (emerging) {
+    ctx.globalAlpha = 0.55;
+    ctx.scale(0.8, 0.8);
+  }
+
+  // Kädet ojossa eteenpäin
+  ctx.strokeStyle = '#56693a';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
-  ctx.strokeStyle = ZONE_COLOR;
-  ctx.lineWidth = 3;
+  ctx.moveTo(4, -9);
+  ctx.lineTo(ZOMBIE_RADIUS + 10, -8);
+  ctx.moveTo(4, 9);
+  ctx.lineTo(ZOMBIE_RADIUS + 10, 8);
   ctx.stroke();
+
+  ctx.fillStyle = '#5d6b48';
+  ctx.beginPath();
+  ctx.arc(0, 0, ZOMBIE_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#2b331f';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Repaleiset vaatteet
+  ctx.fillStyle = '#3c3a33';
+  ctx.beginPath();
+  ctx.arc(-3, 0, ZOMBIE_RADIUS - 4, Math.PI * 0.6, Math.PI * 1.4);
+  ctx.fill();
+
+  // Silmät
+  ctx.fillStyle = '#ff3b30';
+  ctx.beginPath();
+  ctx.arc(7, -4, 2.2, 0, Math.PI * 2);
+  ctx.arc(7, 4, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawPlayer(ctx, p, alpha, isLocal) {
@@ -176,8 +392,11 @@ function drawPlayer(ctx, p, alpha, isLocal) {
     ctx.lineWidth = 2;
     ctx.stroke();
   }
+}
 
-  // Nimi ja HP-palkki
+function drawPlayerLabel(ctx, p, alpha) {
+  const x = lerp(p.px, p.x, alpha);
+  const y = lerp(p.py, p.y, alpha);
   ctx.font = '600 12px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#e6e9ef';
@@ -212,21 +431,227 @@ function drawParticles(ctx, dt) {
   ctx.globalAlpha = 1;
 }
 
+// --- Valaistus ---
+
+// Pimeä kerros, johon valonlähteet "pyyhkivät" reikiä.
+function drawLighting(ctx, world, alpha, now, w, h, dpr, sight) {
+  if (!lightCanvas) lightCanvas = makeCanvas(1, 1);
+  if (!lightCanvas) return;
+  if (lightCanvas.width !== ctx.canvas.width || lightCanvas.height !== ctx.canvas.height) {
+    lightCanvas.width = ctx.canvas.width;
+    lightCanvas.height = ctx.canvas.height;
+  }
+  const g = lightCanvas.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.globalCompositeOperation = 'source-over';
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = DARKNESS;
+  g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'destination-out';
+
+  const light = (x, y, radius, strength) => {
+    const s = worldToScreen(x, y);
+    const r = radius * camera.zoom;
+    if (s.x < -r || s.y < -r || s.x > w + r || s.y > h + r) return;
+    const grad = g.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
+    grad.addColorStop(0, `rgba(0,0,0,${strength})`);
+    grad.addColorStop(0.55, `rgba(0,0,0,${strength * 0.6})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(s.x - r, s.y - r, r * 2, r * 2);
+  };
+
+  // Taskulampun keila: pehmeä reuna + kirkkaampi ydin.
+  const cone = (x, y, aim, range, half, strength) => {
+    const s = worldToScreen(x, y);
+    const r = range * camera.zoom;
+    const grad = g.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
+    grad.addColorStop(0, `rgba(0,0,0,${strength})`);
+    grad.addColorStop(0.7, `rgba(0,0,0,${strength * 0.75})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    for (const [spread, k] of [[half * 1.3, 0.35], [half, 1]]) {
+      g.globalAlpha = k;
+      g.beginPath();
+      g.moveTo(s.x, s.y);
+      g.arc(s.x, s.y, r, aim - spread, aim + spread);
+      g.closePath();
+      g.fill();
+    }
+    g.globalAlpha = 1;
+  };
+
+  LAMPS.forEach((l, i) => light(l.x, l.y, l.r, lampLevel(i, now)));
+  for (const p of Object.values(world.players)) {
+    if (!p.alive) continue;
+    const x = lerp(p.px, p.x, alpha);
+    const y = lerp(p.py, p.y, alpha);
+    light(x, y, AURA_RADIUS, 0.9);
+    cone(x, y, p.aim, FLASHLIGHT_RANGE, FLASHLIGHT_HALF_ANGLE, 0.95);
+  }
+  for (const b of world.bullets) light(lerp(b.px, b.x, alpha), lerp(b.py, b.y, alpha), 45, 0.7);
+
+  // Kaikki näköyhteyden ulkopuolella pimennetään uudelleen, valoista riippumatta.
+  if (sight) {
+    g.globalCompositeOperation = 'source-over';
+    g.beginPath();
+    g.rect(0, 0, w, h);
+    sight.forEach((pt, i) => {
+      const s = worldToScreen(pt.x, pt.y);
+      if (i === 0) g.moveTo(s.x, s.y);
+      else g.lineTo(s.x, s.y);
+    });
+    g.closePath();
+    g.fillStyle = OUT_OF_SIGHT;
+    g.fill('evenodd');
+  }
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(lightCanvas, 0, 0);
+  ctx.restore();
+}
+
+// --- Näköyhteys: säteet jokaiseen seinän kulmaan, osumista monikulmio ---
+
+const SEGMENTS = [];
+const CORNERS = [];
+for (const r of [...OBSTACLES, { x: 0, y: 0, w: ARENA_W, h: ARENA_H }]) {
+  const pts = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
+  for (let i = 0; i < 4; i++) {
+    const [x1, y1] = pts[i];
+    const [x2, y2] = pts[(i + 1) % 4];
+    SEGMENTS.push({ x1, y1, x2, y2 });
+    CORNERS.push(pts[i]);
+  }
+}
+
+function raycast(ox, oy, dx, dy) {
+  let best = 5000;
+  for (const s of SEGMENTS) {
+    const sx = s.x2 - s.x1;
+    const sy = s.y2 - s.y1;
+    const den = dx * sy - dy * sx;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((s.x1 - ox) * sy - (s.y1 - oy) * sx) / den;
+    const u = ((s.x1 - ox) * dy - (s.y1 - oy) * dx) / den;
+    if (t > 0 && u >= 0 && u <= 1 && t < best) best = t;
+  }
+  return best;
+}
+
+function visibilityPolygon(ox, oy) {
+  const points = [];
+  for (const [cx, cy] of CORNERS) {
+    const base = Math.atan2(cy - oy, cx - ox);
+    // Kulman ohi hieman molemmin puolin, jotta säde jatkuu seinän taakse.
+    for (const a of [base - 0.0005, base, base + 0.0005]) {
+      const dx = Math.cos(a);
+      const dy = Math.sin(a);
+      const t = raycast(ox, oy, dx, dy);
+      points.push({ a, x: ox + dx * t, y: oy + dy * t });
+    }
+  }
+  points.sort((p, q) => p.a - q.a);
+  return points;
+}
+
+// Seinät näkyvät himmeinä ääriviivoina myös pimeässä, jotta kartassa pysyy suunnassa.
+function drawWallOutlines(ctx) {
+  ctx.strokeStyle = 'rgba(90, 96, 108, 0.35)';
+  ctx.lineWidth = 1.5;
+  for (const r of OBSTACLES) ctx.strokeRect(r.x, r.y, r.w, r.h);
+  ctx.strokeRect(0, 0, ARENA_W, ARENA_H);
+}
+
+// Punaiset silmät hehkuvat pimeässä, jos zombiin on näköyhteys.
+function drawZombieEyes(ctx, zombies, viewer, alpha) {
+  ctx.fillStyle = '#ff2a1f';
+  ctx.shadowColor = '#ff2a1f';
+  ctx.shadowBlur = 8;
+  for (const z of zombies) {
+    const x = lerp(z.px ?? z.x, z.x, alpha);
+    const y = lerp(z.py ?? z.y, z.y, alpha);
+    if (Math.hypot(x - viewer.x, y - viewer.y) > EYE_RANGE) continue;
+    if (!lineOfSight(viewer.x, viewer.y, x, y)) continue;
+    const c = Math.cos(z.angle);
+    const s = Math.sin(z.angle);
+    ctx.globalAlpha = (z.emerging ?? z.emerge > 0) ? 0.5 : 1;
+    for (const side of [-4, 4]) {
+      ctx.beginPath();
+      ctx.arc(x + c * 7 - s * side, y + s * 7 + c * side, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+// Lamput värisevät ja sammuvat välillä hetkeksi.
+function lampLevel(i, t) {
+  const blink = hash(Math.floor(t * 10) * 7 + i * 131);
+  if (blink < 0.04) return 0.2;
+  return 0.6 + 0.15 * Math.sin(t * 3 + i * 1.7);
+}
+
+function hash(n) {
+  const s = Math.sin(n * 12.9898) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function drawFog(ctx, z, t) {
+  const pad = 2000;
+  ctx.beginPath();
+  ctx.rect(-pad, -pad, ARENA_W + 2 * pad, ARENA_H + 2 * pad);
+  ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2, true);
+  ctx.fillStyle = 'rgba(70, 110, 40, 0.35)';
+  ctx.fill('evenodd');
+
+  // Pehmeä reuna
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.arc(z.x, z.y, z.r + 6 + i * 12, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(120, 170, 70, ${0.22 - i * 0.05})`;
+    ctx.lineWidth = 12;
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(170, 220, 90, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([14, 10]);
+  ctx.lineDashOffset = -t * 20;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
 // --- HUD ---
 
-function drawHud(ctx, world, localId, w, h) {
+function drawHud(ctx, world, localId, w, h, dt) {
   const me = world.players[localId];
   const inMatch = world.phase !== 'warmup';
   ctx.textBaseline = 'alphabetic';
 
-  if (me?.alive && world.zone && outsideZone(me, world.zone)) drawZoneWarning(ctx, w, h);
+  if (me?.alive && world.zone && outsideZone(me, world.zone)) drawFogWarning(ctx, w, h);
+  if (hurtFlash > 0) {
+    drawVignette(ctx, w, h, `rgba(200, 20, 20, ${hurtFlash * 0.45})`);
+    hurtFlash = Math.max(0, hurtFlash - dt * 2.5);
+  }
 
-  // Oma HP vasemmassa alakulmassa
+  // Kierroslaskuri ja oma HP vasemmassa alakulmassa
+  if (inMatch && world.round > 0) {
+    ctx.font = '72px Creepster, Impact, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#00000088';
+    ctx.fillText(String(world.round), 23, h - 63);
+    ctx.fillStyle = ROUND_RED;
+    ctx.fillText(String(world.round), 20, h - 66);
+  }
   if (me) {
-    ctx.font = '700 28px system-ui, sans-serif';
+    ctx.font = '700 24px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillStyle = me.alive ? '#e6e9ef' : '#ff5252';
-    ctx.fillText(`${Math.max(0, Math.ceil(me.hp))} HP`, 20, h - 24);
+    ctx.fillText(`${Math.max(0, Math.ceil(me.hp))} HP`, 22, h - 24);
   }
 
   drawScoreboard(ctx, world, localId, w, inMatch);
@@ -244,15 +669,15 @@ function drawScoreboard(ctx, world, localId, w, inMatch) {
   const rows = Object.values(world.players).sort(inMatch
     ? (a, b) => b.score - a.score || b.kills - a.kills
     : (a, b) => b.kills - a.kills || a.deaths - b.deaths);
-  const x0 = w - 220;
+  const x0 = w - 250;
   ctx.font = '600 14px system-ui, sans-serif';
-  ctx.fillStyle = '#00000066';
-  ctx.fillRect(x0, 52, 208, 28 + rows.length * 22);
+  ctx.fillStyle = '#00000088';
+  ctx.fillRect(x0, 52, 238, 28 + rows.length * 22);
   ctx.fillStyle = '#8a93a6';
   ctx.textAlign = 'left';
   ctx.fillText(inMatch ? `Pisteet (${TARGET_SCORE})` : 'Lämmittely', x0 + 12, 72);
   ctx.textAlign = 'right';
-  ctx.fillText(inMatch ? 'Pist.  Tap.' : 'K / D', w - 24, 72);
+  ctx.fillText(inMatch ? 'Pist.  Tap.  Zomb.' : 'K / D   Zomb.', w - 24, 72);
   rows.forEach((p, i) => {
     const y = 96 + i * 22;
     ctx.globalAlpha = inMatch && !p.alive ? 0.45 : 1;
@@ -261,7 +686,8 @@ function drawScoreboard(ctx, world, localId, w, inMatch) {
     ctx.fillText((p.id === localId ? '▸ ' : '') + p.name, x0 + 12, y);
     ctx.fillStyle = '#e6e9ef';
     ctx.textAlign = 'right';
-    ctx.fillText(inMatch ? `${p.score}     ${p.kills}` : `${p.kills} / ${p.deaths}`, w - 24, y);
+    const z = String(p.zombieKills ?? 0).padStart(3, ' ');
+    ctx.fillText(inMatch ? `${p.score}      ${p.kills}       ${z}` : `${p.kills} / ${p.deaths}      ${z}`, w - 24, y);
   });
   ctx.globalAlpha = 1;
 }
@@ -275,8 +701,16 @@ function drawKillFeed(ctx) {
     const age = (now - k.time) / 1000;
     if (age > 5) continue;
     ctx.globalAlpha = Math.min(1, 5 - age);
-    const killerName = k.killer ? k.killer.name : 'Alue';
-    ctx.fillStyle = k.killer ? k.killer.color : ZONE_COLOR;
+    let killerName = k.killer?.name || '?';
+    let killerColor = k.killer?.color || '#fff';
+    if (k.cause === 'zombie') {
+      killerName = 'Zombi';
+      killerColor = ZOMBIE_COLOR;
+    } else if (k.cause === 'fog') {
+      killerName = 'Myrkkysumu';
+      killerColor = FOG_COLOR;
+    }
+    ctx.fillStyle = killerColor;
     ctx.fillText(killerName, 20, y);
     const kw = ctx.measureText(killerName + '  ').width;
     ctx.fillStyle = '#8a93a6';
@@ -302,21 +736,22 @@ function drawPhaseBanner(ctx, world, me, w, h) {
       break;
 
     case 'countdown':
-      ctx.fillStyle = '#fff';
-      ctx.font = '800 96px system-ui, sans-serif';
-      ctx.fillText(String(Math.max(1, Math.ceil(world.phaseTimer))), w / 2, h / 2 - 40);
+      // Yläosaan, ettei peitä omaa hahmoa ruudun keskellä.
+      ctx.font = '120px Creepster, Impact, sans-serif';
+      ctx.fillStyle = ROUND_RED;
+      ctx.fillText(String(Math.max(1, Math.ceil(world.phaseTimer))), w / 2, 200);
       ctx.font = '600 22px system-ui, sans-serif';
       ctx.fillStyle = '#c0c6d4';
-      ctx.fillText(me?.alive ? `Erä ${world.round}` : `Erä ${world.round} · liityt seuraavaan erään`, w / 2, h / 2 + 4);
+      ctx.fillText(me?.alive ? `Erä ${world.round}` : `Erä ${world.round} · liityt seuraavaan erään`, w / 2, 236);
       break;
 
     case 'playing': {
       const all = Object.values(world.players);
       const alive = all.filter((p) => p.alive).length;
       const z = world.zone;
-      const zoneText = !z ? '' : z.elapsed < ZONE_DELAY
-        ? ` · alue kutistuu ${Math.ceil(ZONE_DELAY - z.elapsed)} s` : ' · alue kutistuu!';
-      smallBanner(ctx, w, `Erä ${world.round}`, `Elossa ${alive}/${all.length}${zoneText}`);
+      const fogText = !z ? '' : z.elapsed < ZONE_DELAY
+        ? ` · sumu sulkeutuu ${Math.ceil(ZONE_DELAY - z.elapsed)} s` : ' · sumu sulkeutuu!';
+      smallBanner(ctx, w, `Erä ${world.round}`, `Elossa ${alive}/${all.length}${fogText}`);
       if (me && !me.alive) {
         ctx.font = '600 16px system-ui, sans-serif';
         ctx.fillStyle = '#c0c6d4';
@@ -327,9 +762,9 @@ function drawPhaseBanner(ctx, world, me, w, h) {
 
     case 'roundEnd':
       if (world.roundWinner) {
-        centerBox(ctx, w, h, `${name(world.roundWinner)} voitti erän!`, `+${WIN_POINTS} pistettä`, color(world.roundWinner));
+        centerBox(ctx, w, h, `${name(world.roundWinner)} selvisi!`, `+${WIN_POINTS} pistettä`, color(world.roundWinner));
       } else {
-        centerBox(ctx, w, h, 'Tasapeli', 'Kukaan ei selvinnyt');
+        centerBox(ctx, w, h, 'Kukaan ei selvinnyt', 'Ei pisteitä tästä erästä');
       }
       break;
 
@@ -350,7 +785,7 @@ function smallBanner(ctx, w, title, sub) {
 }
 
 function centerBox(ctx, w, h, title, sub, titleColor = '#fff') {
-  ctx.fillStyle = '#00000099';
+  ctx.fillStyle = '#000000aa';
   ctx.fillRect(0, h / 2 - 54, w, 108);
   ctx.textAlign = 'center';
   ctx.fillStyle = titleColor;
@@ -364,38 +799,42 @@ function centerBox(ctx, w, h, title, sub, titleColor = '#fff') {
 function drawGameOver(ctx, world, w, h) {
   const winner = world.players[world.matchWinner];
   const rows = Object.values(world.players).sort((a, b) => b.score - a.score);
-  const boxH = 130 + rows.length * 28;
+  const boxH = 140 + rows.length * 28;
   const top = h / 2 - boxH / 2;
 
-  ctx.fillStyle = '#000000b3';
+  ctx.fillStyle = '#000000c0';
   ctx.fillRect(0, top, w, boxH);
   ctx.textAlign = 'center';
-  ctx.font = '800 40px system-ui, sans-serif';
+  ctx.font = '52px Creepster, Impact, sans-serif';
   ctx.fillStyle = winner?.color || '#fff';
-  ctx.fillText(`${winner?.name || '?'} voitti pelin!`, w / 2, top + 54);
+  ctx.fillText(`${winner?.name || '?'} voitti pelin!`, w / 2, top + 62);
 
   ctx.font = '600 18px system-ui, sans-serif';
   rows.forEach((p, i) => {
-    const y = top + 100 + i * 28;
+    const y = top + 110 + i * 28;
     ctx.textAlign = 'left';
     ctx.fillStyle = p.color;
-    ctx.fillText(`${i + 1}. ${p.name}`, w / 2 - 150, y);
+    ctx.fillText(`${i + 1}. ${p.name}`, w / 2 - 190, y);
     ctx.textAlign = 'right';
     ctx.fillStyle = '#e6e9ef';
-    ctx.fillText(`${p.score} p · ${p.wins} erää · ${p.kills} tappoa`, w / 2 + 170, y);
+    ctx.fillText(`${p.score} p · ${p.wins} erää · ${p.kills} tappoa · ${p.zombieKills ?? 0} zombia`, w / 2 + 210, y);
   });
 }
 
-function drawZoneWarning(ctx, w, h) {
+function drawVignette(ctx, w, h, color) {
   const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.7);
-  g.addColorStop(0, '#ff525200');
-  g.addColorStop(1, '#ff525266');
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, color);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
+}
+
+function drawFogWarning(ctx, w, h) {
+  drawVignette(ctx, w, h, 'rgba(110, 170, 50, 0.45)');
   ctx.textAlign = 'center';
   ctx.font = '700 20px system-ui, sans-serif';
-  ctx.fillStyle = ZONE_COLOR;
-  ctx.fillText('Palaa alueelle!', w / 2, h - 90);
+  ctx.fillStyle = FOG_COLOR;
+  ctx.fillText('Myrkkysumu! Palaa sisään', w / 2, h - 90);
 }
 
 function outsideZone(p, z) {

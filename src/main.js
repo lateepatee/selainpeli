@@ -24,6 +24,8 @@ const startBtn = document.getElementById('start');
 
 resize(canvas);
 window.addEventListener('resize', () => resize(canvas));
+// Canvas ei lataa fonttia itse; ladataan valmiiksi kierroslaskuria varten.
+document.fonts?.load('72px Creepster').catch(() => {});
 initInput(canvas);
 
 let session = null;

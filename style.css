@@ -1,3 +1,9 @@
+@font-face {
+  font-family: 'Creepster';
+  src: url('assets/fonts/Creepster-Regular.ttf') format('truetype');
+  font-display: swap;
+}
+
 html, body {
   margin: 0;
   height: 100%;
@@ -37,8 +43,11 @@ canvas {
 
 h1 {
   margin: 0 0 20px;
-  font-size: 28px;
+  font-family: 'Creepster', Impact, sans-serif;
+  font-weight: 400;
+  font-size: 44px;
   letter-spacing: 0.04em;
+  color: #b3121b;
 }
 
 h2 {

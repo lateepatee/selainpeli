@@ -13,8 +13,10 @@ import {
   PLAYER_RADIUS, PLAYER_SPEED, PLAYER_HP, RESPAWN_TIME,
   BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE, BULLET_LIFE, FIRE_COOLDOWN,
   TARGET_SCORE, WIN_POINTS, KILL_POINTS, COUNTDOWN_TIME, ROUND_END_TIME, GAME_OVER_TIME,
-  ZONE_DELAY, ZONE_SHRINK_TIME, ZONE_MIN_R, ZONE_DPS, ZONE_DPS_FINAL,
+  ZONE_DELAY, ZONE_SHRINK_TIME, ZONE_MIN_R, ZONE_DPS, ZONE_DPS_FINAL, ZOMBIE_RADIUS,
 } from './constants.js';
+import { clamp, pointInRect, pushCircleOutOfRect } from './geometry.js';
+import { stepZombies } from './zombies.js';
 
 export const EMPTY_INPUT = { up: false, down: false, left: false, right: false, aim: 0, shoot: false };
 
@@ -30,6 +32,10 @@ export function createWorld() {
     zone: null,           // { x, y, r, r0, elapsed }
     roundWinner: null,    // id tai null (tasapeli)
     matchWinner: null,
+    zombies: [],
+    nextZombieId: 1,
+    zombieTimer: 0,
+    flowAt: 0,            // milloin zombien reitit lasketaan seuraavaksi
   };
 }
 
@@ -51,6 +57,7 @@ export function addPlayer(world, id, name, color) {
     deaths: 0,
     score: 0,
     wins: 0,
+    zombieKills: 0,
     killedBy: null,
   };
   world.players[id] = p;
@@ -72,6 +79,7 @@ export function startMatch(world) {
     p.wins = 0;
     p.kills = 0;
     p.deaths = 0;
+    p.zombieKills = 0;
   }
   world.round = 0;
   world.matchWinner = null;
@@ -82,6 +90,8 @@ export function startMatch(world) {
 function startRound(world) {
   world.round++;
   world.bullets = [];
+  world.zombies = [];
+  world.zombieTimer = 2;
   world.roundWinner = null;
   world.zone = createZone();
   world.phase = 'countdown';
@@ -140,6 +150,7 @@ export function step(world, inputs, dt) {
     }
   }
 
+  stepZombies(world, dt, events, (p, amount, ev) => damagePlayer(world, p, amount, null, 'zombie', ev));
   stepBullets(world, dt, events);
 
   if (world.phase === 'playing') {
@@ -167,6 +178,7 @@ function toWarmup(world) {
   world.phase = 'warmup';
   world.zone = null;
   world.bullets = [];
+  world.zombies = [];
   for (const p of Object.values(world.players)) {
     if (!p.alive) spawn(world, p);
   }
@@ -181,8 +193,7 @@ function stepZone(world, dt, events) {
 
   for (const p of Object.values(world.players)) {
     if (!p.alive || Math.hypot(p.x - z.x, p.y - z.y) <= z.r) continue;
-    p.hp -= dps * dt;
-    if (p.hp <= 0) kill(world, p, null, events);
+    damagePlayer(world, p, dps * dt, null, 'fog', events);
   }
 }
 
@@ -247,6 +258,7 @@ function fire(world, p) {
 function stepBullets(world, dt, events) {
   const players = Object.values(world.players);
   const hitRadius = PLAYER_RADIUS + BULLET_RADIUS;
+  const zombieHitRadius = ZOMBIE_RADIUS + BULLET_RADIUS;
 
   world.bullets = world.bullets.filter((b) => {
     b.px = b.x;
@@ -270,17 +282,39 @@ function stepBullets(world, dt, events) {
       const dy = p.y - b.y;
       if (dx * dx + dy * dy > hitRadius * hitRadius) continue;
 
-      p.hp -= BULLET_DAMAGE;
       events.push({ type: 'hit', x: b.x, y: b.y, target: p.id, by: b.owner });
-      if (p.hp <= 0) kill(world, p, b.owner, events);
+      damagePlayer(world, p, BULLET_DAMAGE, b.owner, 'player', events);
+      return false;
+    }
+
+    for (const z of world.zombies) {
+      if (z.hp <= 0) continue;
+      const dx = z.x - b.x;
+      const dy = z.y - b.y;
+      if (dx * dx + dy * dy > zombieHitRadius * zombieHitRadius) continue;
+
+      z.hp -= BULLET_DAMAGE;
+      events.push({ type: 'zhit', x: b.x, y: b.y });
+      if (z.hp <= 0) {
+        const shooter = world.players[b.owner];
+        if (shooter) shooter.zombieKills++;
+        events.push({ type: 'zkill', x: z.x, y: z.y, by: b.owner });
+      }
       return false;
     }
     return true;
   });
+  world.zombies = world.zombies.filter((z) => z.hp > 0);
 }
 
-// killerId null = alue tappoi.
-function kill(world, victim, killerId, events) {
+// cause: 'player' | 'zombie' | 'fog'. attackerId on pelaajan id tai null.
+function damagePlayer(world, p, amount, attackerId, cause, events) {
+  if (!p.alive) return;
+  p.hp -= amount;
+  if (p.hp <= 0) kill(world, p, attackerId, cause, events);
+}
+
+function kill(world, victim, killerId, cause, events) {
   victim.alive = false;
   victim.hp = 0;
   victim.deaths++;
@@ -291,7 +325,7 @@ function kill(world, victim, killerId, events) {
     killer.kills++;
     if (world.phase === 'playing') killer.score += KILL_POINTS;
   }
-  events.push({ type: 'kill', x: victim.x, y: victim.y, victim: victim.id, killer: killerId });
+  events.push({ type: 'kill', x: victim.x, y: victim.y, victim: victim.id, killer: killerId, cause });
 }
 
 // Etsii satunnaisen paikan, joka ei ole esteen sisällä eikä liian lähellä muita.
@@ -318,53 +352,4 @@ function spawn(world, p) {
   p.alive = true;
   p.cooldown = 0;
   p.respawnTimer = 0;
-}
-
-// --- Geometria ---
-
-export function clamp(v, min, max) {
-  return v < min ? min : v > max ? max : v;
-}
-
-export function pointInRect(x, y, r, pad = 0) {
-  return x > r.x - pad && x < r.x + r.w + pad && y > r.y - pad && y < r.y + r.h + pad;
-}
-
-function pushCircleOutOfRect(c, radius, r) {
-  const nx = clamp(c.x, r.x, r.x + r.w);
-  const ny = clamp(c.y, r.y, r.y + r.h);
-  const dx = c.x - nx;
-  const dy = c.y - ny;
-  const d2 = dx * dx + dy * dy;
-  if (d2 >= radius * radius) return;
-
-  if (d2 > 0) {
-    const d = Math.sqrt(d2);
-    c.x = nx + (dx / d) * radius;
-    c.y = ny + (dy / d) * radius;
-    return;
-  }
-  // Keskipiste esteen sisällä: työnnetään lähimmän reunan yli.
-  const left = c.x - r.x;
-  const right = r.x + r.w - c.x;
-  const top = c.y - r.y;
-  const bottom = r.y + r.h - c.y;
-  const m = Math.min(left, right, top, bottom);
-  if (m === left) c.x = r.x - radius;
-  else if (m === right) c.x = r.x + r.w + radius;
-  else if (m === top) c.y = r.y - radius;
-  else c.y = r.y + r.h + radius;
-}
-
-// Onko kahden pisteen välillä esteetöntä? (botit käyttävät)
-export function lineOfSight(x1, y1, x2, y2) {
-  const dist = Math.hypot(x2 - x1, y2 - y1);
-  const steps = Math.ceil(dist / 8);
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const x = x1 + (x2 - x1) * t;
-    const y = y1 + (y2 - y1) * t;
-    if (OBSTACLES.some((r) => pointInRect(x, y, r))) return false;
-  }
-  return true;
 }

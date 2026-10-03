@@ -30,12 +30,27 @@ export const COUNTDOWN_TIME = 3;     // s ennen erän alkua
 export const ROUND_END_TIME = 4;     // s erän tuloksen näyttö
 export const GAME_OVER_TIME = 10;    // s lopputuloksen näyttö, sitten lämmittelyyn
 
-// Kutistuva alue
-export const ZONE_DELAY = 10;        // s ennen kuin alue alkaa kutistua
+// Myrkkysumu (kutistuva alue)
+export const ZONE_DELAY = 10;        // s ennen kuin sumu alkaa sulkeutua
 export const ZONE_SHRINK_TIME = 60;  // s täydestä pienimpään
 export const ZONE_MIN_R = 110;
-export const ZONE_DPS = 8;           // vahinko/s alueen ulkopuolella
-export const ZONE_DPS_FINAL = 20;    // kun alue on täysin kutistunut
+export const ZONE_DPS = 8;           // vahinko/s sumussa
+export const ZONE_DPS_FINAL = 20;    // kun sumu on sulkeutunut kokonaan
+
+// Zombit
+export const ZOMBIE_RADIUS = 14;
+export const ZOMBIE_HP = 50;               // +ZOMBIE_HP_PER_LEVEL joka tasolla
+export const ZOMBIE_HP_PER_LEVEL = 15;
+export const ZOMBIE_SPEED = 65;            // px/s, +ZOMBIE_SPEED_PER_LEVEL joka tasolla
+export const ZOMBIE_SPEED_PER_LEVEL = 10;
+export const ZOMBIE_SPEED_MAX = 150;
+export const ZOMBIE_SPRINTER_LEVEL = 3;    // tästä tasosta alkaen osa juoksee
+export const ZOMBIE_DAMAGE = 20;
+export const ZOMBIE_ATTACK_COOLDOWN = 1;   // s
+export const ZOMBIE_EMERGE_TIME = 0.8;     // s ikkunasta kiipeäminen
+export const ZOMBIE_LEVEL_TIME = 12;       // s erän kestoa per vaikeustaso
+export const ZOMBIE_MAX = 50;
+export const WARMUP_ZOMBIES = 8;
 
 export const PLAYER_COLORS = [
   '#4fc3f7', // sininen
@@ -46,17 +61,52 @@ export const PLAYER_COLORS = [
   '#f06292', // pinkki
 ];
 
-// Esteet: suorakulmiot areenan koordinaateissa. Symmetrinen asettelu.
+// Bunkkerin seinät ja esteet: suorakulmiot areenan koordinaateissa.
+const T = 24; // seinän paksuus
 export const OBSTACLES = [
-  { x: 350, y: 200, w: 200, h: 40 },
-  { x: 1050, y: 200, w: 200, h: 40 },
-  { x: 350, y: 760, w: 200, h: 40 },
-  { x: 1050, y: 760, w: 200, h: 40 },
-  { x: 760, y: 420, w: 80, h: 160 },
-  { x: 200, y: 430, w: 40, h: 140 },
-  { x: 1360, y: 430, w: 40, h: 140 },
-  { x: 580, y: 470, w: 90, h: 60 },
-  { x: 930, y: 470, w: 90, h: 60 },
-  { x: 740, y: 100, w: 120, h: 40 },
-  { x: 740, y: 860, w: 120, h: 40 },
+  // Keskushuone, aukot joka sivulla
+  { x: 600, y: 370, w: 150, h: T },
+  { x: 850, y: 370, w: 150, h: T },
+  { x: 600, y: 606, w: 150, h: T },
+  { x: 850, y: 606, w: 150, h: T },
+  { x: 600, y: 370, w: T, h: 80 },
+  { x: 600, y: 550, w: T, h: 80 },
+  { x: 976, y: 370, w: T, h: 80 },
+  { x: 976, y: 550, w: T, h: 80 },
+  // Kulmien L-seinät
+  { x: 200, y: 180, w: 220, h: T },
+  { x: 200, y: 180, w: T, h: 160 },
+  { x: 1180, y: 180, w: 220, h: T },
+  { x: 1376, y: 180, w: T, h: 160 },
+  { x: 200, y: 796, w: 220, h: T },
+  { x: 200, y: 660, w: T, h: 160 },
+  { x: 1180, y: 796, w: 220, h: T },
+  { x: 1376, y: 660, w: T, h: 160 },
+  // Laatikot
+  { x: 420, y: 470, w: 60, h: 60, crate: true },
+  { x: 1120, y: 470, w: 60, h: 60, crate: true },
+  { x: 760, y: 130, w: 80, h: 50, crate: true },
+  { x: 760, y: 820, w: 80, h: 50, crate: true },
+];
+
+// Laudoitetut ikkunat ulkoseinissä: zombit kiipeävät näistä sisään.
+// side kertoo, mihin suuntaan ikkuna aukeaa (piirtoa varten).
+export const WINDOWS = [
+  { x: 320, y: 0, side: 'top' },
+  { x: 800, y: 0, side: 'top' },
+  { x: 1280, y: 0, side: 'top' },
+  { x: 320, y: ARENA_H, side: 'bottom' },
+  { x: 800, y: ARENA_H, side: 'bottom' },
+  { x: 1280, y: ARENA_H, side: 'bottom' },
+  { x: 0, y: 500, side: 'left' },
+  { x: ARENA_W, y: 500, side: 'right' },
+];
+
+// Kattolamput (vain tunnelmaa varten, välkkyvät).
+export const LAMPS = [
+  { x: 800, y: 500, r: 170 },
+  { x: 310, y: 260, r: 130 },
+  { x: 1290, y: 260, r: 130 },
+  { x: 310, y: 740, r: 130 },
+  { x: 1290, y: 740, r: 130 },
 ];

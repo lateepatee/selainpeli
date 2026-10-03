@@ -194,12 +194,20 @@ export function startClient({ name, code, onReady, onFail }) {
       bullets.push({ x, y, px: x, py: y });
     }
 
+    const zombies = [];
+    for (const [id, zb] of b.zombies) {
+      const za = a.zombies.get(id) || zb;
+      const x = za.x + (zb.x - za.x) * t;
+      const y = za.y + (zb.y - za.y) * t;
+      zombies.push({ x, y, px: x, py: y, angle: lerpAngle(za.angle, zb.angle, t), emerging: zb.emerging });
+    }
+
     // Efektit laukaistaan vasta kun piirtoaika saavuttaa ne.
     const due = [];
     while (eventQueue.length > 0 && eventQueue[0].t <= renderT) due.push(eventQueue.shift().e);
 
     const view = {
-      players, bullets,
+      players, bullets, zombies,
       phase: latest.phase, phaseTimer: latest.phaseTimer, round: latest.round,
       roundWinner: latest.roundWinner, matchWinner: latest.matchWinner, zone: latest.zone,
     };
@@ -222,7 +230,7 @@ export function startClient({ name, code, onReady, onFail }) {
         return;
       }
       const { view, due } = buildView(acc / TICK);
-      handleEvents(due, view);
+      handleEvents(due, view, localId);
       const target = cameraTarget(view, localId);
       if (target) followCamera(target, dt);
       render(ctx, view, localId, 1, dt);

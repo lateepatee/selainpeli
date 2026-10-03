@@ -1,9 +1,10 @@
 // Yksinkertainen tekoäly testaamiseen. Tuottaa saman syötteen kuin oikea pelaaja.
 
 import { ARENA_W, ARENA_H, OBSTACLES } from './constants.js';
-import { lineOfSight, pointInRect } from './game.js';
+import { lineOfSight, pointInRect } from './geometry.js';
 
 const SIGHT_RANGE = 550;
+const ZOMBIE_THREAT_RANGE = 280; // tätä lähempänä oleva zombi ammutaan ensin
 const AIM_ERROR = 0.12;       // radiaaneja
 const REACTION_TIME = 0.35;   // s ennen kuin botti alkaa ampua uutta kohdetta
 
@@ -83,6 +84,18 @@ function newBrain() {
 }
 
 function nearestVisibleEnemy(world, me) {
+  // Lähellä oleva zombi on aina suurin uhka.
+  let zombie = null;
+  let zombieDist = ZOMBIE_THREAT_RANGE;
+  for (const z of world.zombies) {
+    const d = Math.hypot(z.x - me.x, z.y - me.y);
+    if (d < zombieDist && lineOfSight(me.x, me.y, z.x, z.y)) {
+      zombie = z;
+      zombieDist = d;
+    }
+  }
+  if (zombie) return { id: `z${zombie.id}`, x: zombie.x, y: zombie.y };
+
   let best = null;
   let bestDist = SIGHT_RANGE;
   for (const p of Object.values(world.players)) {

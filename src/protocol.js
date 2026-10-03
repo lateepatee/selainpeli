@@ -7,7 +7,7 @@
 //                    { type: 'pong', c }
 //                    { type: 'reject', reason }
 
-export const PEER_PREFIX = 'areena-peli-v1-';
+export const PEER_PREFIX = 'areena-peli-v2-';
 export const MAX_PLAYERS = 6;
 export const SNAPSHOT_EVERY = 2; // tickiä -> 30 snapshotia/s
 
@@ -27,9 +27,10 @@ export function encodeSnapshot(world, acks, events) {
     z: z ? [r1(z.x), r1(z.y), r1(z.r), r1(z.elapsed)] : null,
     p: Object.values(world.players).map((p) => [
       p.id, p.name, p.color, r1(p.x), r1(p.y), r2(p.aim), r1(p.hp), p.alive ? 1 : 0,
-      r1(p.respawnTimer), p.kills, p.deaths, acks[p.id] || 0, p.score, p.wins, p.killedBy,
+      r1(p.respawnTimer), p.kills, p.deaths, acks[p.id] || 0, p.score, p.wins, p.killedBy, p.zombieKills,
     ]),
     b: world.bullets.map((b) => [b.id, r1(b.x), r1(b.y)]),
+    zb: world.zombies.map((z) => [z.id, r1(z.x), r1(z.y), r2(z.angle), z.emerge > 0 ? 1 : 0]),
     e: events.map((e) => ({ ...e, x: r1(e.x ?? 0), y: r1(e.y ?? 0) })),
   };
 }
@@ -40,14 +41,18 @@ export function decodeSnapshot(msg) {
     players[a[0]] = {
       id: a[0], name: a[1], color: a[2], x: a[3], y: a[4], aim: a[5], hp: a[6],
       alive: a[7] === 1, respawnTimer: a[8], kills: a[9], deaths: a[10], ack: a[11],
-      score: a[12], wins: a[13], killedBy: a[14],
+      score: a[12], wins: a[13], killedBy: a[14], zombieKills: a[15],
     };
   }
   const bullets = new Map();
   for (const b of msg.b) bullets.set(b[0], { id: b[0], x: b[1], y: b[2] });
+  const zombies = new Map();
+  for (const a of Array.isArray(msg.zb) ? msg.zb : []) {
+    zombies.set(a[0], { id: a[0], x: a[1], y: a[2], angle: a[3], emerging: a[4] === 1 });
+  }
   const z = Array.isArray(msg.z) ? { x: msg.z[0], y: msg.z[1], r: msg.z[2], elapsed: msg.z[3] } : null;
   return {
-    t: msg.t, players, bullets, events: msg.e,
+    t: msg.t, players, bullets, zombies, events: msg.e,
     phase: msg.ph, phaseTimer: msg.pt, round: msg.rd,
     roundWinner: msg.rw, matchWinner: msg.mw, zone: z,
   };
