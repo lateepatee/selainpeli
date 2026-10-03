@@ -3,8 +3,10 @@
 import { ARENA_W, ARENA_H, OBSTACLES } from './constants.js';
 import { lineOfSight, pointInRect } from './geometry.js';
 import { WALL_BUYS } from './weapons.js';
+import { isLitFor } from './vision.js';
 
 const SIGHT_RANGE = 550;
+const HEARING_RANGE = 200;      // näin lähellä olevan pelaajan botti huomaa pimeässäkin
 const ZOMBIE_THREAT_RANGE = 280; // tätä lähempänä oleva zombi ammutaan ensin
 const AIM_ERROR = 0.12;       // radiaaneja
 const REACTION_TIME = 0.35;   // s ennen kuin botti alkaa ampua uutta kohdetta
@@ -140,7 +142,9 @@ function nearestVisibleEnemy(world, me) {
   for (const p of Object.values(world.players)) {
     if (p === me || !p.alive) continue;
     const d = Math.hypot(p.x - me.x, p.y - me.y);
-    if (d < bestDist && lineOfSight(me.x, me.y, p.x, p.y)) {
+    // Botti näkee samoilla säännöillä kuin ihminen: vain oman valonsa tai lampun valossa.
+    const noticed = d < HEARING_RANGE || isLitFor(me, me.aim, p.x, p.y);
+    if (d < bestDist && noticed && lineOfSight(me.x, me.y, p.x, p.y)) {
       best = p;
       bestDist = d;
     }

@@ -9,6 +9,7 @@ import { lineOfSight } from './geometry.js';
 import { onMapChange, MAP_THEME, MAP_NAME } from './map.js';
 import { drawChat } from './chat.js';
 import { drawCharacter } from './appearance.js';
+import { AURA_RADIUS, FLASHLIGHT_RANGE, FLASHLIGHT_HALF_ANGLE, isLitFor } from './vision.js';
 import {
   WEAPONS, WALL_BUYS, BOX, findInteractable,
   PERKS, PERK_IDS, PERK_MACHINES, MACHINE_SIZE, RELOAD_PERK_MUL, maxHpOf, POWERUPS,
@@ -16,9 +17,6 @@ import {
 
 const WALL = 22;              // ulkoseinän paksuus (piirretään areenan ulkopuolelle)
 const OUT_OF_SIGHT = 'rgb(3, 4, 7)';  // seinien taakse ei näe yhtään
-const AURA_RADIUS = 110;          // valopiiri pelaajan ympärillä
-const FLASHLIGHT_RANGE = 440;     // taskulampun keilan pituus
-const FLASHLIGHT_HALF_ANGLE = 0.42; // keilan puolikas leveys (rad)
 const EYE_RANGE = 650;            // zombien silmät näkyvät pimeässä tähän asti
 const FOG_COLOR = '#8bc34a';
 const ZOMBIE_COLOR = '#7d9a52';
@@ -192,7 +190,7 @@ export function render(ctx, world, localId, alpha, dt) {
   const target = cameraTarget(world, localId);
   const viewer = target ? { x: lerp(target.px, target.x, alpha), y: lerp(target.py, target.y, alpha) } : null;
   const sight = viewer ? visibilityPolygon(viewer.x, viewer.y) : null;
-  drawLighting(ctx, world, alpha, now, w, h, dpr, sight);
+  drawLighting(ctx, world, alpha, now, w, h, dpr, sight, target, viewer);
 
   // --- Pimeyden päälle: seinien ääriviivat, sumu, nimet ja zombien silmät ---
   ctx.save();
@@ -202,13 +200,16 @@ export function render(ctx, world, localId, alpha, dt) {
   drawWallBuys(ctx);
   drawBox(ctx, world.box, now);
   drawMachines(ctx, now);
-  drawPowerups(ctx, world.powerups || [], now);
+  drawPowerups(ctx, world.powerups || [], now, viewer);
   if (world.zone) drawFog(ctx, world.zone, now);
   for (const p of Object.values(world.players)) {
     if (!p.alive) continue;
     const x = lerp(p.px, p.x, alpha);
     const y = lerp(p.py, p.y, alpha);
-    if (p === target || !viewer || lineOfSight(viewer.x, viewer.y, x, y)) drawPlayerLabel(ctx, p, alpha);
+    // Nimi ja HP vain, jos pelaaja on oikeasti valaistu katsojalle (muuten nimi paljastaisi pimeässä).
+    const seen = p === target || !viewer
+      || (lineOfSight(viewer.x, viewer.y, x, y) && isLitFor(viewer, target.aim, x, y));
+    if (seen) drawPlayerLabel(ctx, p, alpha);
   }
   if (viewer) drawZombieEyes(ctx, world.zombies || [], viewer, alpha);
   ctx.restore();
@@ -677,7 +678,9 @@ function drawParticles(ctx, dt) {
 // --- Valaistus ---
 
 // Pimeä kerros, johon valonlähteet "pyyhkivät" reikiä.
-function drawLighting(ctx, world, alpha, now, w, h, dpr, sight) {
+// Valoa antavat vain katsojan oma valopiiri ja taskulamppu, kattolamput ja luodit.
+// Muiden pelaajien valot eivät näy: vastustaja pimeässä on näkymätön.
+function drawLighting(ctx, world, alpha, now, w, h, dpr, sight, target, viewer) {
   if (!lightCanvas) lightCanvas = makeCanvas(1, 1);
   if (!lightCanvas) return;
   if (lightCanvas.width !== ctx.canvas.width || lightCanvas.height !== ctx.canvas.height) {
@@ -725,12 +728,9 @@ function drawLighting(ctx, world, alpha, now, w, h, dpr, sight) {
   };
 
   LAMPS.forEach((l, i) => light(l.x, l.y, l.r, lampLevel(i, now)));
-  for (const p of Object.values(world.players)) {
-    if (!p.alive) continue;
-    const x = lerp(p.px, p.x, alpha);
-    const y = lerp(p.py, p.y, alpha);
-    light(x, y, AURA_RADIUS, 0.9);
-    cone(x, y, p.aim, FLASHLIGHT_RANGE, FLASHLIGHT_HALF_ANGLE, 0.95);
+  if (target?.alive && viewer) {
+    light(viewer.x, viewer.y, AURA_RADIUS, 0.9);
+    cone(viewer.x, viewer.y, target.aim, FLASHLIGHT_RANGE, FLASHLIGHT_HALF_ANGLE, 0.95);
   }
   for (const b of world.bullets) light(lerp(b.px, b.x, alpha), lerp(b.py, b.y, alpha), 45, 0.7);
 
@@ -968,8 +968,10 @@ function drawMachines(ctx, t) {
 }
 
 // Tehosteet sykkivät lattialla ja vilkkuvat ennen katoamista.
-function drawPowerups(ctx, powerups, t) {
+function drawPowerups(ctx, powerups, t, viewer) {
   for (const pu of powerups) {
+    // Tehoste hehkuu, mutta seinien läpi sitä ei näe.
+    if (viewer && !lineOfSight(viewer.x, viewer.y, pu.x, pu.y)) continue;
     if (pu.life < 4 && Math.floor(t * 6) % 2 === 0) continue;
     const def = POWERUPS[pu.type];
     if (!def) continue;
