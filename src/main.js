@@ -1,6 +1,7 @@
 // Käynnistys, aula ja pelisilmukka. Peli itse pyörii joko host- tai liittyjäistunnossa.
 
-import { initInput } from './input.js';
+import { initInput, releaseAll } from './input.js';
+import { setChatOpen, clearChat, CHAT_MAX_LENGTH } from './chat.js';
 import { resize } from './render.js';
 import { startHost } from './host.js';
 import { startClient } from './client.js';
@@ -23,6 +24,8 @@ const copyBtn = document.getElementById('copylink');
 const leaveBtn = document.getElementById('leave');
 const startBtn = document.getElementById('start');
 const muteBtn = document.getElementById('mute');
+const chatInput = document.getElementById('chatinput');
+chatInput.maxLength = CHAT_MAX_LENGTH;
 
 resize(canvas);
 window.addEventListener('resize', () => resize(canvas));
@@ -80,6 +83,8 @@ function startSession(s) {
 }
 
 function leave(msg = '') {
+  closeChat();
+  clearChat();
   session?.destroy();
   session = null;
   roomInfo.hidden = true;
@@ -97,6 +102,38 @@ function showGame() {
 }
 
 leaveBtn.addEventListener('click', () => leave());
+
+// --- Chat ---
+
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || !session || !lobby.hidden || document.activeElement === chatInput) return;
+  e.preventDefault();
+  releaseAll();
+  setChatOpen(true);
+  chatInput.hidden = false;
+  chatInput.value = '';
+  chatInput.focus();
+});
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (chatInput.value.trim()) session?.sendChat(chatInput.value);
+    closeChat();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeChat();
+  }
+  e.stopPropagation();
+});
+chatInput.addEventListener('blur', () => closeChat());
+
+function closeChat() {
+  setChatOpen(false);
+  chatInput.hidden = true;
+  chatInput.value = '';
+  if (document.activeElement === chatInput) chatInput.blur();
+}
 
 updateMuteButton();
 muteBtn.addEventListener('click', () => {
@@ -162,13 +199,30 @@ function loadName() {
 }
 
 // --- Pelisilmukka ---
+//
+// Näkyvissä peli etenee ruudunpäivitysten tahdissa. Selain pysäyttää ne, kun välilehti on piilossa
+// (ikkuna pienennetty tai peitetty), joten silloin taustasäie (Worker) pitää pelilogiikan ja verkon
+// käynnissä. Muuten hostin vaihtaessa esim. Discordiin peli jäätyisi kaikilta.
 
 let last = performance.now();
-function frame(now) {
-  const dt = Math.min(0.25, (now - last) / 1000);
+function advance(now, visible) {
+  const dt = Math.min(0.25, Math.max(0, (now - last) / 1000));
   last = now;
+  session?.update(dt, visible);
+  return dt;
+}
+
+const ticker = new Worker(URL.createObjectURL(
+  new Blob(['setInterval(() => postMessage(0), 20);'], { type: 'text/javascript' }),
+));
+ticker.onmessage = () => {
+  if (document.hidden) advance(performance.now(), false);
+};
+
+function frame(now) {
+  const dt = advance(now, true);
   if (session) {
-    session.frame(ctx, dt);
+    session.draw(ctx, dt);
   } else {
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

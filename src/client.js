@@ -7,7 +7,9 @@ import { movePlayer, canAct } from './game.js';
 import { readInput } from './input.js';
 import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
 import { PEER_PREFIX, decodeSnapshot } from './protocol.js';
-import { playEvents, updateAmbient } from './sound.js';
+import { playEvents, updateAmbient, playChatBlip } from './sound.js';
+import { addChat, sanitizeChat } from './chat.js';
+import { setMap, MAP_ID } from './map.js';
 
 const INTERP_DELAY = 0.1;     // s
 const CONNECT_TIMEOUT = 10000; // ms
@@ -72,6 +74,14 @@ export function startClient({ name, code, onReady, onFail }) {
       onReady();
     } else if (msg.type === 'reject') {
       fail(String(msg.reason || 'Host hylkäsi liittymisen.').slice(0, 100));
+    } else if (msg.type === 'chat' && typeof msg.text === 'string') {
+      addChat({
+        name: typeof msg.name === 'string' ? msg.name : '',
+        color: typeof msg.color === 'string' ? msg.color : undefined,
+        text: msg.text,
+        system: msg.system === true,
+      });
+      playChatBlip();
     } else if (msg.type === 'pong' && typeof msg.c === 'number') {
       rtt = performance.now() - msg.c;
     } else if (msg.type === 'snap' && typeof msg.t === 'number'
@@ -85,6 +95,8 @@ export function startClient({ name, code, onReady, onFail }) {
     if (snaps.length > 0 && s.t <= snaps[snaps.length - 1].t) return;
     const now = performance.now();
     lastSnapAt = now;
+    // Kenttä vaihtuu erän alussa: vaihdetaan ennen kuin uutta tilaa käytetään.
+    if (s.mapId && s.mapId !== MAP_ID) setMap(s.mapId);
     snaps.push(s);
     while (snaps.length > 2 && snaps[1].t < s.t - 1) snaps.shift();
 
@@ -221,7 +233,8 @@ export function startClient({ name, code, onReady, onFail }) {
   }
 
   return {
-    frame(ctx, dt) {
+    // Syötteet ja yhteys: ajetaan myös välilehden ollessa piilossa (main.js).
+    update(dt, visible) {
       if (!failed && localId && performance.now() - lastSnapAt > HOST_TIMEOUT) {
         fail('Host ei vastaa.');
       }
@@ -230,7 +243,10 @@ export function startClient({ name, code, onReady, onFail }) {
         tickOnce();
         acc -= TICK;
       }
-
+      // Piilossa ei kerätä efektejä, ettei niitä tule ryöpsähdyksenä takaisin palatessa.
+      if (!visible) eventQueue.length = 0;
+    },
+    draw(ctx, dt) {
       if (snaps.length === 0 || offset === null) {
         drawWaiting(ctx);
         return;
@@ -246,6 +262,10 @@ export function startClient({ name, code, onReady, onFail }) {
     info() {
       const ping = rtt === null ? '–' : `${Math.round(rtt)} ms`;
       return { code, text: `Huone ${code} · ping ${ping}` };
+    },
+    sendChat(text) {
+      const clean = sanitizeChat(text);
+      if (clean && conn?.open) conn.send({ type: 'chat', text: clean });
     },
     debug: () => ({ localId, predicted, pending: pending.length, maxCorrection, snaps: snaps.length }),
     destroy() {

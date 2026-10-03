@@ -8,8 +8,8 @@ export const TICK = 1 / TICK_RATE;
 export const VIEW_W = 1200;
 export const VIEW_H = 750;
 
-export const ARENA_W = 1600;
-export const ARENA_H = 1000;
+// Kentän koko, esteet, ikkunat ja lamput tulevat nykyisestä kentästä (map.js, maps.js).
+export { ARENA_W, ARENA_H, OBSTACLES, WINDOWS, LAMPS } from './map.js';
 
 export const PLAYER_RADIUS = 16;
 export const PLAYER_SPEED = 220;     // px/s
@@ -61,60 +61,4 @@ export const PLAYER_COLORS = [
   '#ba68c8', // violetti
   '#ffd54f', // keltainen
   '#f06292', // pinkki
-];
-
-// Bunkkerin seinät ja esteet: suorakulmiot areenan koordinaateissa.
-const T = 24; // seinän paksuus
-export const OBSTACLES = [
-  // Keskushuone, aukot joka sivulla
-  { x: 600, y: 370, w: 150, h: T },
-  { x: 850, y: 370, w: 150, h: T },
-  { x: 600, y: 606, w: 150, h: T },
-  { x: 850, y: 606, w: 150, h: T },
-  { x: 600, y: 370, w: T, h: 80 },
-  { x: 600, y: 550, w: T, h: 80 },
-  { x: 976, y: 370, w: T, h: 80 },
-  { x: 976, y: 550, w: T, h: 80 },
-  // Kulmien L-seinät
-  { x: 200, y: 180, w: 220, h: T },
-  { x: 200, y: 180, w: T, h: 160 },
-  { x: 1180, y: 180, w: 220, h: T },
-  { x: 1376, y: 180, w: T, h: 160 },
-  { x: 200, y: 796, w: 220, h: T },
-  { x: 200, y: 660, w: T, h: 160 },
-  { x: 1180, y: 796, w: 220, h: T },
-  { x: 1376, y: 660, w: T, h: 160 },
-  // Laatikot
-  { x: 420, y: 470, w: 60, h: 60, crate: true },
-  { x: 1120, y: 470, w: 60, h: 60, crate: true },
-  { x: 760, y: 130, w: 80, h: 50, crate: true },
-  { x: 760, y: 820, w: 80, h: 50, crate: true },
-  // Arpalaatikko keskushuoneessa (sama paikka kuin weapons.js BOX)
-  { x: 768, y: 485, w: 64, h: 30, box: true },
-  // Juoma-automaatit kulmissa (samat paikat kuin weapons.js PERK_MACHINES)
-  { x: 40, y: 60, w: 40, h: 40, machine: true },
-  { x: 1520, y: 60, w: 40, h: 40, machine: true },
-  { x: 40, y: 900, w: 40, h: 40, machine: true },
-];
-
-// Laudoitetut ikkunat ulkoseinissä: zombit kiipeävät näistä sisään.
-// side kertoo, mihin suuntaan ikkuna aukeaa (piirtoa varten).
-export const WINDOWS = [
-  { x: 320, y: 0, side: 'top' },
-  { x: 800, y: 0, side: 'top' },
-  { x: 1280, y: 0, side: 'top' },
-  { x: 320, y: ARENA_H, side: 'bottom' },
-  { x: 800, y: ARENA_H, side: 'bottom' },
-  { x: 1280, y: ARENA_H, side: 'bottom' },
-  { x: 0, y: 500, side: 'left' },
-  { x: ARENA_W, y: 500, side: 'right' },
-];
-
-// Kattolamput (vain tunnelmaa varten, välkkyvät).
-export const LAMPS = [
-  { x: 800, y: 500, r: 170 },
-  { x: 310, y: 260, r: 130 },
-  { x: 1290, y: 260, r: 130 },
-  { x: 310, y: 740, r: 130 },
-  { x: 1290, y: 740, r: 130 },
 ];

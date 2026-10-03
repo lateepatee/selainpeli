@@ -7,24 +7,35 @@ import {
   ZOMBIE_EMERGE_TIME, ZOMBIE_LEVEL_TIME, ZOMBIE_MAX, WARMUP_ZOMBIES,
 } from './constants.js';
 import { clamp, pointInRect, pushCircleOutOfRect, lineOfSight } from './geometry.js';
+import { onMapChange } from './map.js';
 
 // --- Reitinhaku: ruudukko, jossa jokaisella ruudulla etäisyys lähimpään pelaajaan ---
 
 const CELL = 20;
-const COLS = Math.ceil(ARENA_W / CELL);
-const ROWS = Math.ceil(ARENA_H / CELL);
 const FLOW_INTERVAL = 0.2; // s
-const blocked = new Uint8Array(COLS * ROWS);
-const dist = new Float32Array(COLS * ROWS);
-const queue = new Int32Array(COLS * ROWS);
+let COLS = 0;
+let ROWS = 0;
+let blocked = null;
+let dist = null;
+let queue = null;
 
-for (let r = 0; r < ROWS; r++) {
-  for (let c = 0; c < COLS; c++) {
-    const x = (c + 0.5) * CELL;
-    const y = (r + 0.5) * CELL;
-    if (OBSTACLES.some((o) => pointInRect(x, y, o, ZOMBIE_RADIUS))) blocked[r * COLS + c] = 1;
+// Ruudukko rakennetaan uudelleen joka kentälle.
+function buildGrid() {
+  COLS = Math.ceil(ARENA_W / CELL);
+  ROWS = Math.ceil(ARENA_H / CELL);
+  blocked = new Uint8Array(COLS * ROWS);
+  dist = new Float32Array(COLS * ROWS);
+  queue = new Int32Array(COLS * ROWS);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = (c + 0.5) * CELL;
+      const y = (r + 0.5) * CELL;
+      if (OBSTACLES.some((o) => pointInRect(x, y, o, ZOMBIE_RADIUS))) blocked[r * COLS + c] = 1;
+    }
   }
 }
+buildGrid();
+onMapChange(buildGrid);
 
 function cellOf(x, y) {
   const c = clamp(Math.floor(x / CELL), 0, COLS - 1);

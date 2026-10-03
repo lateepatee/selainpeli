@@ -9,7 +9,7 @@
 
 import { PERK_IDS } from './weapons.js';
 
-export const PEER_PREFIX = 'areena-peli-v4-';
+export const PEER_PREFIX = 'areena-peli-v5-';
 export const MAX_PLAYERS = 6;
 export const SNAPSHOT_EVERY = 2; // tickiä -> 30 snapshotia/s
 
@@ -22,6 +22,7 @@ export function encodeSnapshot(world, acks, events) {
   return {
     type: 'snap',
     t: Math.round(world.time * 1000) / 1000,
+    m: world.mapId,
     ph: world.phase,
     pt: r1(world.phaseTimer),
     rd: world.round,
@@ -60,6 +61,7 @@ export function decodeSnapshot(msg) {
   const z = Array.isArray(msg.z) ? { x: msg.z[0], y: msg.z[1], r: msg.z[2], elapsed: msg.z[3] } : null;
   return {
     t: msg.t, players, bullets, zombies, events: msg.e,
+    mapId: typeof msg.m === 'string' ? msg.m : null,
     phase: msg.ph, phaseTimer: msg.pt, round: msg.rd,
     roundWinner: msg.rw, matchWinner: msg.mw, zone: z,
     box: Array.isArray(msg.bx)

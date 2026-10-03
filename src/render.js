@@ -2,17 +2,18 @@
 
 import {
   ARENA_W, ARENA_H, OBSTACLES, WINDOWS, LAMPS, VIEW_W, VIEW_H,
-  PLAYER_RADIUS, PLAYER_HP, BULLET_RADIUS, ZOMBIE_RADIUS,
+  PLAYER_RADIUS, BULLET_RADIUS, ZOMBIE_RADIUS,
   TARGET_SCORE, WIN_POINTS, ZONE_DELAY, DASH_COOLDOWN_TICKS,
 } from './constants.js';
 import { lineOfSight } from './geometry.js';
+import { onMapChange, MAP_THEME, MAP_NAME } from './map.js';
+import { drawChat } from './chat.js';
 import {
   WEAPONS, WALL_BUYS, BOX, findInteractable,
   PERKS, PERK_IDS, PERK_MACHINES, MACHINE_SIZE, RELOAD_PERK_MUL, maxHpOf, POWERUPS,
 } from './weapons.js';
 
 const WALL = 22;              // ulkoseinän paksuus (piirretään areenan ulkopuolelle)
-const DARKNESS = 'rgba(3, 4, 7, 0.95)';
 const OUT_OF_SIGHT = 'rgb(3, 4, 7)';  // seinien taakse ei näe yhtään
 const AURA_RADIUS = 110;          // valopiiri pelaajan ympärillä
 const FLASHLIGHT_RANGE = 440;     // taskulampun keilan pituus
@@ -240,22 +241,32 @@ function seeded(seed) {
   };
 }
 
-// Betonilaattalattia tahroineen piirretään kerran valmiiksi.
+// Teemat: värit, pimeys ja ikkunatyyppi kentän mukaan.
+const THEMES = {
+  bunker: {
+    outer: '#2b2e34', wall: ['#3a3e45', '#4a4f57', '#26292e'], darkness: 0.95, window: 'boards',
+  },
+  manor: {
+    outer: '#2a1d1a', wall: ['#3d2b27', '#5a3f37', '#22161a'], darkness: 0.95, window: 'boards',
+  },
+  graveyard: {
+    outer: null, wall: ['#4a4a47', '#5e5e59', '#2f2f2c'], darkness: 0.9, window: 'gate',
+  },
+  warehouse: {
+    outer: '#30343a', wall: ['#3d434b', '#4d545d', '#272b30'], darkness: 0.94, window: 'shutter',
+  },
+};
+
+function theme() {
+  return THEMES[MAP_THEME] || THEMES.bunker;
+}
+
+// Lattia piirretään kerran valmiiksi joka kentälle.
 function buildFloor() {
   const c = makeCanvas(ARENA_W, ARENA_H);
   if (!c) return null;
   const g = c.getContext('2d');
   const rand = seeded(1234);
-
-  g.fillStyle = '#121416';
-  g.fillRect(0, 0, ARENA_W, ARENA_H);
-  for (let y = 0; y < ARENA_H; y += 100) {
-    for (let x = 0; x < ARENA_W; x += 100) {
-      const s = Math.round(26 + rand() * 9);
-      g.fillStyle = `rgb(${s}, ${s + 1}, ${s + 3})`;
-      g.fillRect(x + 1, y + 1, 98, 98);
-    }
-  }
   const stain = (x, y, r, color) => {
     const grad = g.createRadialGradient(x, y, 0, x, y, r);
     grad.addColorStop(0, color);
@@ -263,23 +274,98 @@ function buildFloor() {
     g.fillStyle = grad;
     g.fillRect(x - r, y - r, r * 2, r * 2);
   };
-  for (let i = 0; i < 45; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 25 + rand() * 80, 'rgba(0,0,0,0.35)');
-  for (let i = 0; i < 12; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 15 + rand() * 30, 'rgba(80,8,10,0.35)');
-
-  g.strokeStyle = 'rgba(0,0,0,0.55)';
-  g.lineWidth = 1;
-  for (let i = 0; i < 30; i++) {
-    let x = rand() * ARENA_W;
-    let y = rand() * ARENA_H;
-    g.beginPath();
-    g.moveTo(x, y);
-    for (let k = 0; k < 4; k++) {
-      x += (rand() - 0.5) * 50;
-      y += (rand() - 0.5) * 50;
-      g.lineTo(x, y);
+  const cracks = (count, color) => {
+    g.strokeStyle = color;
+    g.lineWidth = 1;
+    for (let i = 0; i < count; i++) {
+      let x = rand() * ARENA_W;
+      let y = rand() * ARENA_H;
+      g.beginPath();
+      g.moveTo(x, y);
+      for (let k = 0; k < 4; k++) {
+        x += (rand() - 0.5) * 50;
+        y += (rand() - 0.5) * 50;
+        g.lineTo(x, y);
+      }
+      g.stroke();
     }
-    g.stroke();
+  };
+  const area = (ARENA_W * ARENA_H) / 1e6;
+
+  if (MAP_THEME === 'manor') {
+    // Puulankut
+    for (let y = 0; y < ARENA_H; y += 20) {
+      let x = -rand() * 200;
+      while (x < ARENA_W) {
+        const len = 120 + rand() * 160;
+        const s = Math.round(38 + rand() * 12);
+        g.fillStyle = `rgb(${s + 12}, ${s}, ${s - 14})`;
+        g.fillRect(x, y, len - 2, 19);
+        x += len;
+      }
+    }
+    // Matot huoneiden keskellä
+    for (const l of LAMPS) {
+      g.fillStyle = 'rgba(90, 20, 26, 0.55)';
+      g.fillRect(l.x - 110, l.y - 70, 220, 140);
+      g.strokeStyle = 'rgba(160, 120, 60, 0.35)';
+      g.lineWidth = 4;
+      g.strokeRect(l.x - 100, l.y - 60, 200, 120);
+    }
+    for (let i = 0; i < 20 * area; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 25 + rand() * 60, 'rgba(0,0,0,0.3)');
+  } else if (MAP_THEME === 'graveyard') {
+    g.fillStyle = '#131b11';
+    g.fillRect(0, 0, ARENA_W, ARENA_H);
+    // Polut porteilta keskelle
+    g.strokeStyle = 'rgba(52, 42, 30, 0.75)';
+    g.lineCap = 'round';
+    g.lineWidth = 70;
+    for (const w of WINDOWS) {
+      g.beginPath();
+      g.moveTo(w.x, w.y);
+      g.lineTo(ARENA_W / 2, ARENA_H / 2);
+      g.stroke();
+    }
+    // Ruohotupsut
+    for (let i = 0; i < 9000 * area; i++) {
+      const s = Math.round(22 + rand() * 22);
+      g.fillStyle = `rgba(${s - 6}, ${s + 10}, ${s - 10}, 0.7)`;
+      g.fillRect(rand() * ARENA_W, rand() * ARENA_H, 2, 3 + rand() * 3);
+    }
+    for (let i = 0; i < 30 * area; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 40 + rand() * 90, 'rgba(0,0,0,0.35)');
+  } else if (MAP_THEME === 'warehouse') {
+    for (let y = 0; y < ARENA_H; y += 200) {
+      for (let x = 0; x < ARENA_W; x += 200) {
+        const s = Math.round(34 + rand() * 8);
+        g.fillStyle = `rgb(${s}, ${s + 1}, ${s + 2})`;
+        g.fillRect(x + 1, y + 1, 198, 198);
+      }
+    }
+    // Keltaiset turvaviivat hyllyjen ympärillä
+    g.strokeStyle = 'rgba(200, 160, 30, 0.45)';
+    g.lineWidth = 4;
+    g.setLineDash([24, 14]);
+    for (const r of OBSTACLES) {
+      if (r.kind === 'shelf') g.strokeRect(r.x - 12, r.y - 12, r.w + 24, r.h + 24);
+    }
+    g.setLineDash([]);
+    for (let i = 0; i < 25 * area; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 20 + rand() * 60, 'rgba(0,0,0,0.4)');
+    cracks(15 * area, 'rgba(0,0,0,0.45)');
+  } else {
+    g.fillStyle = '#121416';
+    g.fillRect(0, 0, ARENA_W, ARENA_H);
+    for (let y = 0; y < ARENA_H; y += 100) {
+      for (let x = 0; x < ARENA_W; x += 100) {
+        const s = Math.round(26 + rand() * 9);
+        g.fillStyle = `rgb(${s}, ${s + 1}, ${s + 3})`;
+        g.fillRect(x + 1, y + 1, 98, 98);
+      }
+    }
+    for (let i = 0; i < 28 * area; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 25 + rand() * 80, 'rgba(0,0,0,0.35)');
+    cracks(20 * area, 'rgba(0,0,0,0.55)');
   }
+  // Vanhoja veritahroja joka kentällä
+  for (let i = 0; i < 8 * area; i++) stain(rand() * ARENA_W, rand() * ARENA_H, 15 + rand() * 30, 'rgba(80,8,10,0.35)');
   return c;
 }
 
@@ -303,60 +389,193 @@ function drawFloor(ctx) {
 }
 
 function drawWalls(ctx) {
-  // Ulkoseinät
-  ctx.fillStyle = '#2b2e34';
-  ctx.fillRect(-WALL, -WALL, ARENA_W + 2 * WALL, WALL);
-  ctx.fillRect(-WALL, ARENA_H, ARENA_W + 2 * WALL, WALL);
-  ctx.fillRect(-WALL, 0, WALL, ARENA_H);
-  ctx.fillRect(ARENA_W, 0, WALL, ARENA_H);
+  const th = theme();
+  if (th.outer) {
+    ctx.fillStyle = th.outer;
+    ctx.fillRect(-WALL, -WALL, ARENA_W + 2 * WALL, WALL);
+    ctx.fillRect(-WALL, ARENA_H, ARENA_W + 2 * WALL, WALL);
+    ctx.fillRect(-WALL, 0, WALL, ARENA_H);
+    ctx.fillRect(ARENA_W, 0, WALL, ARENA_H);
+  } else {
+    drawFence(ctx);
+  }
   for (const win of WINDOWS) drawWindow(ctx, win);
 
+  drawObstacleShapes(ctx, false);
+}
+
+// Piirtää esteet (paitsi arpalaatikon ja automaatit). skipLow jättää matalat hautakivet pois.
+function drawObstacleShapes(ctx, skipLow) {
+  const th = theme();
   for (const r of OBSTACLES) {
-    if (r.box || r.machine) continue;
-    if (r.crate) {
-      ctx.fillStyle = '#5a4026';
-      ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.strokeStyle = '#3a2916';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
-      ctx.beginPath();
-      ctx.moveTo(r.x + 4, r.y + 4);
-      ctx.lineTo(r.x + r.w - 4, r.y + r.h - 4);
-      ctx.moveTo(r.x + r.w - 4, r.y + 4);
-      ctx.lineTo(r.x + 4, r.y + r.h - 4);
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = '#3a3e45';
-      ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.fillStyle = '#4a4f57';
-      ctx.fillRect(r.x, r.y, r.w, 4);
-      ctx.fillStyle = '#26292e';
-      ctx.fillRect(r.x, r.y + r.h - 3, r.w, 3);
+    if (skipLow && r.kind === 'grave') continue;
+    switch (r.kind) {
+      case 'box':
+      case 'machine':
+        break;
+      case 'crate': drawCrate(ctx, r); break;
+      case 'furniture': drawFurniture(ctx, r); break;
+      case 'shelf': drawShelf(ctx, r); break;
+      case 'grave': drawGrave(ctx, r); break;
+      case 'tree': drawTree(ctx, r); break;
+      case 'stone': drawBlock(ctx, r, THEMES.graveyard.wall, true); break;
+      default: drawBlock(ctx, r, th.wall, false);
     }
   }
 }
 
-// Ikkuna-aukko ulkoseinässä ja sen yli naulatut laudat.
+function drawBlock(ctx, r, [base, top, bottom], bricks) {
+  ctx.fillStyle = base;
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  if (bricks) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let y = r.y + 10; y < r.y + r.h; y += 10) {
+      ctx.moveTo(r.x, y);
+      ctx.lineTo(r.x + r.w, y);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = top;
+  ctx.fillRect(r.x, r.y, r.w, 4);
+  ctx.fillStyle = bottom;
+  ctx.fillRect(r.x, r.y + r.h - 3, r.w, 3);
+}
+
+function drawCrate(ctx, r) {
+  ctx.fillStyle = '#5a4026';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.strokeStyle = '#3a2916';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+  ctx.beginPath();
+  ctx.moveTo(r.x + 4, r.y + 4);
+  ctx.lineTo(r.x + r.w - 4, r.y + r.h - 4);
+  ctx.moveTo(r.x + r.w - 4, r.y + 4);
+  ctx.lineTo(r.x + 4, r.y + r.h - 4);
+  ctx.stroke();
+}
+
+function drawFurniture(ctx, r) {
+  ctx.fillStyle = '#3e2a1c';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = '#5a3d27';
+  ctx.fillRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(r.x + 8, r.y + 8, r.w - 16, r.h - 16);
+}
+
+// Metallihylly täynnä laatikoita
+function drawShelf(ctx, r) {
+  ctx.fillStyle = '#2b2f35';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+  const rand = seeded(Math.round(r.x * 7 + r.y));
+  for (let x = r.x + 4; x < r.x + r.w - 20; x += 26) {
+    const s = Math.round(70 + rand() * 40);
+    ctx.fillStyle = `rgb(${s + 20}, ${s}, ${s - 30})`;
+    ctx.fillRect(x, r.y + 5, 22, r.h - 10);
+  }
+  ctx.strokeStyle = '#596069';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+}
+
+function drawGrave(ctx, r) {
+  ctx.fillStyle = '#5f6366';
+  ctx.beginPath();
+  ctx.moveTo(r.x, r.y + r.h);
+  ctx.lineTo(r.x, r.y + r.h / 2);
+  ctx.arc(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, Math.PI, 0);
+  ctx.lineTo(r.x + r.w, r.y + r.h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#3c3f42';
+  ctx.fillRect(r.x, r.y + r.h - 3, r.w, 3);
+}
+
+function drawTree(ctx, r) {
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+  ctx.fillStyle = '#0f1f10';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r.w * 0.85, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#18301a';
+  ctx.beginPath();
+  ctx.arc(cx - 4, cy - 4, r.w * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Rautainen aita hautausmaan reunoilla
+function drawFence(ctx) {
+  ctx.fillStyle = '#0a0d09';
+  ctx.fillRect(-WALL, -WALL, ARENA_W + 2 * WALL, WALL);
+  ctx.fillRect(-WALL, ARENA_H, ARENA_W + 2 * WALL, WALL);
+  ctx.fillRect(-WALL, 0, WALL, ARENA_H);
+  ctx.fillRect(ARENA_W, 0, WALL, ARENA_H);
+  ctx.strokeStyle = '#3a3d40';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(-WALL / 2, -WALL / 2, ARENA_W + WALL, ARENA_H + WALL);
+  ctx.fillStyle = '#4a4e52';
+  for (let x = 0; x <= ARENA_W; x += 40) {
+    ctx.fillRect(x - 2, -WALL / 2 - 2, 4, 4);
+    ctx.fillRect(x - 2, ARENA_H + WALL / 2 - 2, 4, 4);
+  }
+  for (let y = 0; y <= ARENA_H; y += 40) {
+    ctx.fillRect(-WALL / 2 - 2, y - 2, 4, 4);
+    ctx.fillRect(ARENA_W + WALL / 2 - 2, y - 2, 4, 4);
+  }
+}
+
+// Zombien sisääntulo ulkoreunalla: laudoitettu ikkuna, rautaportti tai lastausovi.
 function drawWindow(ctx, win) {
   const len = 70;
   const vertical = win.side === 'left' || win.side === 'right';
   const cx = win.side === 'left' ? -WALL / 2 : win.side === 'right' ? ARENA_W + WALL / 2 : win.x;
   const cy = win.side === 'top' ? -WALL / 2 : win.side === 'bottom' ? ARENA_H + WALL / 2 : win.y;
+  const type = theme().window;
 
   ctx.save();
   ctx.translate(cx, cy);
   if (vertical) ctx.rotate(Math.PI / 2);
   ctx.fillStyle = '#050607';
   ctx.fillRect(-len / 2, -WALL / 2, len, WALL);
-  const tilt = [-0.12, 0.08, -0.04];
-  tilt.forEach((a, i) => {
-    ctx.save();
-    ctx.translate(0, (i - 1) * 6);
-    ctx.rotate(a);
-    ctx.fillStyle = i === 1 ? '#7a5634' : '#6a4a2c';
-    ctx.fillRect(-len / 2 - 4, -2.5, len + 8, 5);
-    ctx.restore();
-  });
+
+  if (type === 'gate') {
+    ctx.strokeStyle = '#5a5f63';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = -len / 2 + 6; x < len / 2; x += 9) {
+      ctx.moveTo(x, -WALL / 2);
+      ctx.lineTo(x, WALL / 2);
+    }
+    ctx.moveTo(-len / 2, 0);
+    ctx.lineTo(len / 2, 0);
+    ctx.stroke();
+    ctx.fillStyle = '#6b7075';
+    ctx.fillRect(-len / 2 - 5, -WALL / 2 - 2, 6, WALL + 4);
+    ctx.fillRect(len / 2 - 1, -WALL / 2 - 2, 6, WALL + 4);
+  } else if (type === 'shutter') {
+    for (let x = -len / 2; x < len / 2; x += 10) {
+      ctx.fillStyle = Math.round(x / 10) % 2 === 0 ? '#c9a227' : '#1a1a1a';
+      ctx.fillRect(x, -WALL / 2, 10, 4);
+      ctx.fillRect(x, WALL / 2 - 4, 10, 4);
+    }
+    ctx.fillStyle = '#3a3f45';
+    for (let y = -WALL / 2 + 6; y < WALL / 2 - 5; y += 4) ctx.fillRect(-len / 2 + 2, y, len - 4, 2);
+  } else {
+    const tilt = [-0.12, 0.08, -0.04];
+    tilt.forEach((a, i) => {
+      ctx.save();
+      ctx.translate(0, (i - 1) * 6);
+      ctx.rotate(a);
+      ctx.fillStyle = i === 1 ? '#7a5634' : '#6a4a2c';
+      ctx.fillRect(-len / 2 - 4, -2.5, len + 8, 5);
+      ctx.restore();
+    });
+  }
   ctx.restore();
 }
 
@@ -487,7 +706,7 @@ function drawLighting(ctx, world, alpha, now, w, h, dpr, sight) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.globalCompositeOperation = 'source-over';
   g.clearRect(0, 0, w, h);
-  g.fillStyle = DARKNESS;
+  g.fillStyle = `rgba(3, 4, 7, ${theme().darkness})`;
   g.fillRect(0, 0, w, h);
   g.globalCompositeOperation = 'destination-out';
 
@@ -556,17 +775,28 @@ function drawLighting(ctx, world, alpha, now, w, h, dpr, sight) {
 
 // --- Näköyhteys: säteet jokaiseen seinän kulmaan, osumista monikulmio ---
 
-const SEGMENTS = [];
-const CORNERS = [];
-for (const r of [...OBSTACLES, { x: 0, y: 0, w: ARENA_W, h: ARENA_H }]) {
-  const pts = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
-  for (let i = 0; i < 4; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[(i + 1) % 4];
-    SEGMENTS.push({ x1, y1, x2, y2 });
-    CORNERS.push(pts[i]);
+let SEGMENTS = [];
+let CORNERS = [];
+function buildSegments() {
+  SEGMENTS = [];
+  CORNERS = [];
+  // Hautakivet ovat matalia: niiden yli näkee, vaikka niiden läpi ei pääse.
+  for (const r of [...OBSTACLES.filter((o) => o.kind !== 'grave'), { x: 0, y: 0, w: ARENA_W, h: ARENA_H }]) {
+    const pts = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]];
+    for (let i = 0; i < 4; i++) {
+      const [x1, y1] = pts[i];
+      const [x2, y2] = pts[(i + 1) % 4];
+      SEGMENTS.push({ x1, y1, x2, y2 });
+      CORNERS.push(pts[i]);
+    }
   }
 }
+buildSegments();
+onMapChange(() => {
+  buildSegments();
+  floorCanvas = null;
+  decals.length = 0;
+});
 
 function raycast(ox, oy, dx, dy) {
   let best = 5000;
@@ -598,11 +828,19 @@ function visibilityPolygon(ox, oy) {
   return points;
 }
 
-// Seinät näkyvät himmeinä ääriviivoina myös pimeässä, jotta kartassa pysyy suunnassa.
+// Esteiden yläpinnat näkyvät himmeinä myös pimeässä: ne peittävät näkyvyyden, joten niiden
+// näkeminen ei paljasta mitään, mutta kentän muoto hahmottuu.
 function drawWallOutlines(ctx) {
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+  drawObstacleShapes(ctx, true);
+  ctx.restore();
   ctx.strokeStyle = 'rgba(90, 96, 108, 0.35)';
   ctx.lineWidth = 1.5;
-  for (const r of OBSTACLES) ctx.strokeRect(r.x, r.y, r.w, r.h);
+  for (const r of OBSTACLES) {
+    // Hautakivet ja puut ovat matalia ja pieniä: ääriviivat vain sotkisivat pimeyttä.
+    if (r.kind !== 'grave' && r.kind !== 'tree') ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
   ctx.strokeRect(0, 0, ARENA_W, ARENA_H);
 }
 
@@ -860,12 +1098,13 @@ function drawHud(ctx, world, localId, w, h, dt) {
     drawActiveEffects(ctx, me, w);
   }
   drawAnnouncement(ctx, w, h);
+  drawChat(ctx, h);
 
   // Ohje alhaalla keskellä
   ctx.font = '500 12px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#4a5162';
-  ctx.fillText('WASD liiku · hiiri ampuu · Shift / oikea nappi väistää · R lataa · Q / rulla vaihtaa · E osta', w / 2, h - 12);
+  ctx.fillText('WASD liiku · hiiri ampuu · Shift / oikea nappi väistää · R lataa · Q / rulla vaihtaa · E osta · Enter chat', w / 2, h - 12);
 }
 
 // Juodut juomat HP:n vieressä ja väistön latautuminen sen alla.
@@ -1059,7 +1298,7 @@ function drawPhaseBanner(ctx, world, me, w, h) {
       ctx.fillText(String(Math.max(1, Math.ceil(world.phaseTimer))), w / 2, 200);
       ctx.font = '600 22px system-ui, sans-serif';
       ctx.fillStyle = '#c0c6d4';
-      ctx.fillText(me?.alive ? `Erä ${world.round}` : `Erä ${world.round} · liityt seuraavaan erään`, w / 2, 236);
+      ctx.fillText(me?.alive ? `Erä ${world.round} · ${MAP_NAME}` : `Erä ${world.round} · ${MAP_NAME} · liityt seuraavaan erään`, w / 2, 236);
       break;
 
     case 'playing': {
@@ -1068,7 +1307,7 @@ function drawPhaseBanner(ctx, world, me, w, h) {
       const z = world.zone;
       const fogText = !z ? '' : z.elapsed < ZONE_DELAY
         ? ` · sumu sulkeutuu ${Math.ceil(ZONE_DELAY - z.elapsed)} s` : ' · sumu sulkeutuu!';
-      smallBanner(ctx, w, `Erä ${world.round}`, `Elossa ${alive}/${all.length}${fogText}`);
+      smallBanner(ctx, w, `Erä ${world.round} · ${MAP_NAME}`, `Elossa ${alive}/${all.length}${fogText}`);
       if (me && !me.alive) {
         ctx.font = '600 16px system-ui, sans-serif';
         ctx.fillStyle = '#c0c6d4';

@@ -240,6 +240,11 @@ function play(e, localId) {
   }
 }
 
+export function playChatBlip() {
+  if (!ctx || muted) return;
+  tone(spatial(undefined, 0, 0.25), { freq: 1050, dur: 0.08, wave: 'triangle', vol: 0.5 });
+}
+
 export function playEvents(events, localId) {
   if (!ctx || muted) return;
   for (const e of events) play(e, localId);

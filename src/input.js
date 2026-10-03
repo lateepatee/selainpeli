@@ -37,6 +37,13 @@ export function initInput(canvas) {
   }, { passive: false });
 }
 
+// Chatin auetessa: ettei hahmo jää kävelemään pohjassa olleen napin mukaan.
+export function releaseAll() {
+  keys.clear();
+  mouse.down = false;
+  mouse.right = false;
+}
+
 // screenToWorld muuntaa hiiren ruutukoordinaatit areenan koordinaateiksi.
 export function readInput(player, screenToWorld) {
   const m = screenToWorld(mouse.x, mouse.y);

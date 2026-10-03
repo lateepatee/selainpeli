@@ -4,7 +4,8 @@ import { TICK, PLAYER_COLORS } from './constants.js';
 import { createWorld, addPlayer, removePlayer, step, startMatch, EMPTY_INPUT } from './game.js';
 import { readInput } from './input.js';
 import { botInput, forgetBot } from './bot.js';
-import { playEvents, updateAmbient } from './sound.js';
+import { playEvents, updateAmbient, playChatBlip } from './sound.js';
+import { addChat, sanitizeChat } from './chat.js';
 import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
 import {
   PEER_PREFIX, MAX_PLAYERS, SNAPSHOT_EVERY,
@@ -14,6 +15,10 @@ import {
 const HOST_ID = 'host';
 const CLIENT_TIMEOUT = 5000;  // ms ilman viestejä -> pelaaja poistetaan
 const MAX_QUEUED_INPUTS = 8;
+const MAX_WAIT_TICKS = 4;     // kuinka kauan odotetaan väärässä järjestyksessä myöhästyvää syötettä
+const HELLO_TIMEOUT = 5000;   // ms: esittäytymätön yhteys suljetaan
+const CHAT_LIMIT = 3;         // viestiä ...
+const CHAT_WINDOW = 5000;     // ... näin monessa millisekunnissa
 
 export function startHost({ name, bots, onRoom, onStatus }) {
   const world = createWorld();
@@ -24,7 +29,7 @@ export function startHost({ name, bots, onRoom, onStatus }) {
   const botIds = [];
   for (let i = 0; i < bots; i++) addBot();
 
-  const clients = new Map(); // peer id -> { id, conn, queue, lastQueued, lastInput, ack, lastSeen }
+  const clients = new Map(); // peer id -> { id, conn, queue, lastInput, ack, waitTicks, lastSeen }
   let nextClientNum = 1;
   let peer = null;
   let roomCode = null;
@@ -70,6 +75,10 @@ export function startHost({ name, bots, onRoom, onStatus }) {
     });
     conn.on('close', () => dropClient(conn.peer));
     conn.on('error', () => dropClient(conn.peer));
+    // Yhteys, joka ei esittäydy, ei jää roikkumaan.
+    setTimeout(() => {
+      if (!clients.has(conn.peer)) conn.close();
+    }, HELLO_TIMEOUT);
   }
 
   function onMessage(conn, msg) {
@@ -81,12 +90,23 @@ export function startHost({ name, bots, onRoom, onStatus }) {
       join(conn, msg.name);
     } else if (msg.type === 'input' && client && Array.isArray(msg.inputs)) {
       const inputs = msg.inputs.slice(0, 10).map(sanitizeInput).filter(Boolean).sort((a, b) => a.seq - b.seq);
+      // Viestit voivat saapua väärässä järjestyksessä: jono pidetään numerojärjestyksessä.
       for (const input of inputs) {
-        if (input.seq <= client.lastQueued) continue;
-        client.queue.push(input);
-        client.lastQueued = input.seq;
+        if (input.seq <= client.ack || client.queue.some((q) => q.seq === input.seq)) continue;
+        const at = client.queue.findIndex((q) => q.seq > input.seq);
+        if (at < 0) client.queue.push(input);
+        else client.queue.splice(at, 0, input);
       }
       while (client.queue.length > MAX_QUEUED_INPUTS) client.queue.shift();
+    } else if (msg.type === 'chat' && client) {
+      const now = performance.now();
+      client.chatTimes = client.chatTimes.filter((t) => now - t < CHAT_WINDOW);
+      if (client.chatTimes.length >= CHAT_LIMIT) return;
+      const text = sanitizeChat(msg.text);
+      if (!text) return;
+      client.chatTimes.push(now);
+      const p = world.players[client.id];
+      broadcastChat({ name: p?.name ?? '?', color: p?.color ?? '#e6e9ef', text });
     } else if (msg.type === 'ping' && typeof msg.c === 'number') {
       conn.send({ type: 'pong', c: msg.c });
     }
@@ -104,21 +124,34 @@ export function startHost({ name, bots, onRoom, onStatus }) {
     }
     // Pelaaja-id annetaan täällä, ei oteta liittyjän peer-id:stä (ettei kukaan voi esiintyä hostina).
     const id = `p${nextClientNum++}`;
-    addPlayer(world, id, sanitizeName(rawName), freeColor());
+    addPlayer(world, id, uniqueName(sanitizeName(rawName)), freeColor());
     clients.set(conn.peer, {
       id, conn,
-      queue: [], lastQueued: 0, lastInput: EMPTY_INPUT, ack: 0,
+      queue: [], lastInput: EMPTY_INPUT, ack: 0, waitTicks: 0, chatTimes: [],
       lastSeen: performance.now(),
     });
     conn.send({ type: 'welcome', id, code: roomCode });
+    broadcastChat({ text: `${world.players[id].name} liittyi peliin`, system: true });
   }
 
   function dropClient(peerId) {
     const c = clients.get(peerId);
     if (!c) return;
     clients.delete(peerId);
+    const name = world.players[c.id]?.name;
     removePlayer(world, c.id);
+    if (name && !destroyed) broadcastChat({ text: `${name} poistui pelistä`, system: true });
     c.conn.close();
+  }
+
+  // Näytetään itselle ja lähetetään kaikille liittyjille.
+  function broadcastChat(msg) {
+    addChat(msg);
+    playChatBlip();
+    const packet = { type: 'chat', name: msg.name ?? '', color: msg.color ?? '', text: msg.text, system: !!msg.system };
+    for (const c of clients.values()) {
+      if (c.conn.open) c.conn.send(packet);
+    }
   }
 
   function addBot() {
@@ -133,26 +166,46 @@ export function startHost({ name, bots, onRoom, onStatus }) {
     forgetBot(id);
   }
 
+  // Samannimiset pelaajat erotetaan numerolla: "Pelaaja", "Pelaaja 2".
+  function uniqueName(name) {
+    const taken = new Set(Object.values(world.players).map((p) => p.name));
+    if (!taken.has(name)) return name;
+    for (let i = 2; ; i++) {
+      const candidate = `${name.slice(0, 13)} ${i}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }
+
   function freeColor() {
     const used = new Set(Object.values(world.players).map((p) => p.color));
     return PLAYER_COLORS.find((c) => !used.has(c)) || PLAYER_COLORS[0];
   }
 
-  function tickOnce() {
+  // visible = välilehti näkyvissä. Piilossa efektejä ja ääniä ei kerätä.
+  function tickOnce(visible) {
     const inputs = { [HOST_ID]: readInput(me, screenToWorld) };
     for (const id of botIds) inputs[id] = botInput(world, id, TICK);
     for (const c of clients.values()) {
-      // Yksi syöte per tick. Jos jono on tyhjä, toistetaan edellinen.
-      if (c.queue.length > 0) {
+      // Yksi syöte per tick. Jos seuraava syöte ei ole vielä perillä, pelaaja odottaa tämän
+      // tickin (skip) eikä hostin tarvitse arvata: liittyjän ennuste pysyy silloin täsmälleen oikeana.
+      // Jos välistä puuttuu syöte, odotetaan sitä hetki ennen kuin jatketaan ilman.
+      const gap = c.queue.length > 0 && c.ack > 0 && c.queue[0].seq !== c.ack + 1;
+      if (c.queue.length > 0 && (!gap || c.waitTicks >= MAX_WAIT_TICKS)) {
         c.lastInput = c.queue.shift();
         c.ack = c.lastInput.seq;
+        c.waitTicks = 0;
+        inputs[c.id] = c.lastInput;
+      } else {
+        if (gap) c.waitTicks++;
+        inputs[c.id] = { ...c.lastInput, skip: true };
       }
-      inputs[c.id] = c.lastInput;
     }
 
     const events = step(world, inputs, TICK);
-    handleEvents(events, world, HOST_ID);
-    playEvents(events, HOST_ID);
+    if (visible) {
+      handleEvents(events, world, HOST_ID);
+      playEvents(events, HOST_ID);
+    }
     pendingEvents.push(...events);
 
     if (++tick % SNAPSHOT_EVERY === 0) broadcast();
@@ -181,12 +234,15 @@ export function startHost({ name, bots, onRoom, onStatus }) {
   }
 
   return {
-    frame(ctx, dt) {
+    // Pelilogiikka ja verkko: ajetaan myös välilehden ollessa piilossa (main.js).
+    update(dt, visible) {
       acc += dt;
       while (acc >= TICK) {
-        tickOnce();
+        tickOnce(visible);
         acc -= TICK;
       }
+    },
+    draw(ctx, dt) {
       const target = cameraTarget(world, HOST_ID);
       if (target) followCamera(target, dt);
       render(ctx, world, HOST_ID, acc / TICK, dt);
@@ -199,6 +255,10 @@ export function startHost({ name, bots, onRoom, onStatus }) {
       const canStart = (world.phase === 'warmup' || world.phase === 'gameOver')
         && Object.keys(world.players).length >= 2;
       return { code: roomCode, text: `${room} · ${humans} pelaaja${humans === 1 ? '' : 'a'}`, canStart };
+    },
+    sendChat(text) {
+      const clean = sanitizeChat(text);
+      if (clean) broadcastChat({ name: me.name, color: me.color, text: clean });
     },
     startMatch() {
       return startMatch(world);

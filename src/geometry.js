@@ -36,7 +36,7 @@ export function pushCircleOutOfRect(c, radius, r) {
   else c.y = r.y + r.h + radius;
 }
 
-// Onko kahden pisteen välillä esteetöntä?
+// Onko kahden pisteen välillä esteetöntä? Matalien hautakivien yli näkee.
 export function lineOfSight(x1, y1, x2, y2) {
   const dist = Math.hypot(x2 - x1, y2 - y1);
   const steps = Math.ceil(dist / 8);
@@ -44,7 +44,7 @@ export function lineOfSight(x1, y1, x2, y2) {
     const t = i / steps;
     const x = x1 + (x2 - x1) * t;
     const y = y1 + (y2 - y1) * t;
-    if (OBSTACLES.some((r) => pointInRect(x, y, r))) return false;
+    if (OBSTACLES.some((r) => r.kind !== 'grave' && pointInRect(x, y, r))) return false;
   }
   return true;
 }

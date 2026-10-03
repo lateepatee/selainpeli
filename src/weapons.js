@@ -41,18 +41,10 @@ export const WEAPONS = {
   },
 };
 
-// Seinäaseet: liitupiirros seinän vieressä. x, y = piirroksen keskipiste lattialla.
-export const WALL_BUYS = [
-  { weapon: 'smg', price: 750, x: 310, y: 222 },
-  { weapon: 'rifle', price: 1000, x: 1290, y: 222 },
-  { weapon: 'rifle', price: 1000, x: 310, y: 778 },
-  { weapon: 'smg', price: 750, x: 1290, y: 778 },
-  { weapon: 'shotgun', price: 600, x: 675, y: 352 },
-  { weapon: 'shotgun', price: 600, x: 925, y: 648 },
-];
+// Seinäaseet, arpalaatikko ja automaatit tulevat nykyisestä kentästä (maps.js).
+import { WALL_BUYS, BOX, PERK_MACHINES, MACHINE_SIZE } from './map.js';
+export { WALL_BUYS, BOX, PERK_MACHINES, MACHINE_SIZE };
 
-// Arpalaatikko keskushuoneessa. Laatikko on myös este (constants.js).
-export const BOX = { x: 800, y: 500, w: 64, h: 30 };
 export const BOX_PRICE = 950;
 export const BOX_SPIN_TIME = 3;
 export const BOX_TAKE_TIME = 8;
@@ -131,13 +123,6 @@ export const ARMOR_HP = 175;          // Panssarijuoman maksimi-HP
 export const RELOAD_PERK_MUL = 0.5;   // latausaika kerrotaan tällä
 export const RAPID_PERK_MUL = 0.75;   // ampumisväli kerrotaan tällä
 
-// Automaatit kartan kulmissa. Samat paikat ovat esteinä constants.js:ssä.
-export const PERK_MACHINES = [
-  { perk: 'rapid', x: 60, y: 80 },
-  { perk: 'reload', x: 1540, y: 80 },
-  { perk: 'armor', x: 60, y: 920 },
-];
-export const MACHINE_SIZE = 40;
 
 export function maxHpOf(p) {
   return p.perks?.armor ? ARMOR_HP : 100;

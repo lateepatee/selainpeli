@@ -129,6 +129,20 @@ button:disabled {
   color: #ffd54f;
 }
 
+#chatinput {
+  position: fixed;
+  left: 14px;
+  bottom: 118px;
+  width: min(436px, calc(100vw - 28px));
+  box-sizing: border-box;
+  background: #000000cc;
+  border-color: #4a5162;
+}
+
+#chatinput[hidden] {
+  display: none;
+}
+
 #roominfo {
   position: fixed;
   top: 12px;

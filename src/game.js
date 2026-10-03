@@ -17,6 +17,8 @@ import {
 } from './constants.js';
 import { clamp, pointInRect, pushCircleOutOfRect } from './geometry.js';
 import { stepZombies } from './zombies.js';
+import { setMap, MAP_ID } from './map.js';
+import { MAP_IDS } from './maps.js';
 import {
   WEAPONS, START_MONEY, MONEY_ZOMBIE_HIT, MONEY_ZOMBIE_KILL, MONEY_PLAYER_KILL, SWAP_TIME,
   BOX_PRICE, BOX_SPIN_TIME, BOX_TAKE_TIME, findInteractable, rollBoxWeapon,
@@ -47,6 +49,7 @@ export function createWorld() {
     zombieTimer: 0,
     flowAt: 0,            // milloin zombien reitit lasketaan seuraavaksi
     box: idleBox(),
+    mapId: MAP_ID,
     powerups: [],         // { id, type, x, y, life }
     nextPowerupId: 1,
   };
@@ -117,8 +120,17 @@ export function startMatch(world) {
   return true;
 }
 
+// Jokainen erä pelataan eri kentällä kuin edellinen.
+function nextMap(world) {
+  const options = MAP_IDS.filter((id) => id !== world.mapId);
+  const id = options[Math.floor(Math.random() * options.length)];
+  setMap(id);
+  world.mapId = id;
+}
+
 function startRound(world) {
   world.round++;
+  nextMap(world);
   world.bullets = [];
   world.zombies = [];
   world.zombieTimer = 2;
@@ -173,6 +185,7 @@ export function step(world, inputs, dt) {
 
     const input = inputs[p.id] || EMPTY_INPUT;
     p.aim = input.aim;
+    if (input.skip) continue;
     const pressed = (k) => input[k] && !p.prev[k];
     const swap = pressed('swap');
     const reload = pressed('reload');
