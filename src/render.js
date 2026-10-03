@@ -8,6 +8,7 @@ import {
 import { lineOfSight } from './geometry.js';
 import { onMapChange, MAP_THEME, MAP_NAME } from './map.js';
 import { drawChat } from './chat.js';
+import { drawCharacter } from './appearance.js';
 import {
   WEAPONS, WALL_BUYS, BOX, findInteractable,
   PERKS, PERK_IDS, PERK_MACHINES, MACHINE_SIZE, RELOAD_PERK_MUL, maxHpOf, POWERUPS,
@@ -633,26 +634,7 @@ function drawPlayer(ctx, p, alpha, isLocal) {
   const x = lerp(p.px, p.x, alpha);
   const y = lerp(p.py, p.y, alpha);
   const gun = PLAYER_RADIUS + (WEAPONS[p.slots?.[p.cur]?.id]?.length ?? 8);
-
-  // Ase
-  ctx.strokeStyle = '#cfd6e4';
-  ctx.lineWidth = 6;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x + Math.cos(p.aim) * gun, y + Math.sin(p.aim) * gun);
-  ctx.stroke();
-
-  // Runko
-  ctx.fillStyle = p.color;
-  ctx.beginPath();
-  ctx.arc(x, y, PLAYER_RADIUS, 0, Math.PI * 2);
-  ctx.fill();
-  if (isLocal) {
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
+  drawCharacter(ctx, x, y, p.aim, PLAYER_RADIUS, p.color, p.look, gun, isLocal);
 }
 
 function drawPlayerLabel(ctx, p, alpha) {

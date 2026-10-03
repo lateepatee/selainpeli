@@ -17,10 +17,13 @@
     <div class="panel">
       <h1>Zombiareena</h1>
 
-      <label class="field">
-        <span>Nimesi</span>
-        <input id="name" maxlength="16" autocomplete="off" placeholder="Pelaaja">
-      </label>
+      <div class="row">
+        <label class="field">
+          <span>Nimesi</span>
+          <input id="name" maxlength="16" autocomplete="off" placeholder="Pelaaja">
+        </label>
+        <button id="charopen" class="secondary">Hahmo</button>
+      </div>
 
       <section>
         <h2>Luo huone</h2>
@@ -54,11 +57,40 @@
     </div>
   </div>
 
+  <div id="charpanel" class="overlay dim" hidden>
+    <div class="panel">
+      <h2>Hahmo</h2>
+      <canvas id="charpreview" width="180" height="180"></canvas>
+      <div id="swatches" class="swatches"></div>
+      <p id="colornote" class="hint"></p>
+      <div class="optrow" data-opt="hat">
+        <span class="optlabel">Päähine</span>
+        <button class="step" data-dir="-1" aria-label="Edellinen">◀</button>
+        <span class="optvalue"></span>
+        <button class="step" data-dir="1" aria-label="Seuraava">▶</button>
+      </div>
+      <div class="optrow" data-opt="pattern">
+        <span class="optlabel">Kuvio</span>
+        <button class="step" data-dir="-1" aria-label="Edellinen">◀</button>
+        <span class="optvalue"></span>
+        <button class="step" data-dir="1" aria-label="Seuraava">▶</button>
+      </div>
+      <div class="optrow" data-opt="face">
+        <span class="optlabel">Kasvot</span>
+        <button class="step" data-dir="-1" aria-label="Edellinen">◀</button>
+        <span class="optvalue"></span>
+        <button class="step" data-dir="1" aria-label="Seuraava">▶</button>
+      </div>
+      <button id="chardone" class="done">Valmis</button>
+    </div>
+  </div>
+
   <input id="chatinput" hidden autocomplete="off" placeholder="Kirjoita viesti – Enter lähettää, Esc peruu">
 
   <div id="roominfo" hidden>
     <span id="roomtext"></span>
     <button id="start" class="primary" hidden>Aloita peli</button>
+    <button id="charbtn" hidden>Hahmo</button>
     <button id="mute">Äänet: päällä</button>
     <button id="copylink">Kopioi linkki</button>
     <button id="leave">Poistu</button>

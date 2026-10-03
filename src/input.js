@@ -3,11 +3,12 @@
 const keys = new Set();
 const mouse = { x: 0, y: 0, down: false, right: false };
 let wheelSwap = false; // hiiren rulla vaihtaa asetta (yksi pulssi)
+let enabled = true;    // false kun hahmovalikko on auki
 
 export function initInput(canvas) {
   window.addEventListener('keydown', (e) => {
     // Aulan tekstikentät saavat näppäimet itselleen.
-    if (e.target instanceof HTMLInputElement) return;
+    if (e.target instanceof HTMLInputElement || !enabled) return;
     keys.add(e.code);
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
   });
@@ -23,6 +24,7 @@ export function initInput(canvas) {
     mouse.y = e.clientY;
   });
   canvas.addEventListener('mousedown', (e) => {
+    if (!enabled) return;
     if (e.button === 0) mouse.down = true;
     if (e.button === 2) mouse.right = true;
   });
@@ -35,6 +37,12 @@ export function initInput(canvas) {
     if (e.deltaY !== 0) wheelSwap = true;
     e.preventDefault();
   }, { passive: false });
+}
+
+// Valikon ollessa auki peli ei saa näppäimiä eikä hiirtä.
+export function setInputEnabled(value) {
+  enabled = value;
+  if (!value) releaseAll();
 }
 
 // Chatin auetessa: ettei hahmo jää kävelemään pohjassa olleen napin mukaan.

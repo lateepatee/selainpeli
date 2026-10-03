@@ -1,6 +1,8 @@
 // Käynnistys, aula ja pelisilmukka. Peli itse pyörii joko host- tai liittyjäistunnossa.
 
-import { initInput, releaseAll } from './input.js';
+import { initInput, releaseAll, setInputEnabled } from './input.js';
+import { HATS, PATTERNS, FACES, loadLook, saveLook, drawCharacter } from './appearance.js';
+import { PLAYER_COLORS } from './constants.js';
 import { setChatOpen, clearChat, CHAT_MAX_LENGTH } from './chat.js';
 import { resize } from './render.js';
 import { startHost } from './host.js';
@@ -25,6 +27,14 @@ const leaveBtn = document.getElementById('leave');
 const startBtn = document.getElementById('start');
 const muteBtn = document.getElementById('mute');
 const chatInput = document.getElementById('chatinput');
+const charPanel = document.getElementById('charpanel');
+const charOpenBtn = document.getElementById('charopen');
+const charBtn = document.getElementById('charbtn');
+const charDoneBtn = document.getElementById('chardone');
+const swatchesEl = document.getElementById('swatches');
+const colorNote = document.getElementById('colornote');
+const preview = document.getElementById('charpreview');
+const previewCtx = preview.getContext('2d');
 chatInput.maxLength = CHAT_MAX_LENGTH;
 
 resize(canvas);
@@ -49,6 +59,7 @@ hostBtn.addEventListener('click', () => {
   const name = currentName();
   startSession(startHost({
     name,
+    look,
     bots: Number(botsSelect.value),
     onRoom: () => updateRoomInfo(),
   }));
@@ -72,6 +83,7 @@ function join() {
   startSession(startClient({
     name: currentName(),
     code,
+    look,
     onReady: () => showGame(),
     onFail: (msg) => leave(msg),
   }));
@@ -84,6 +96,7 @@ function startSession(s) {
 
 function leave(msg = '') {
   closeChat();
+  closeCharPanel();
   clearChat();
   session?.destroy();
   session = null;
@@ -106,7 +119,7 @@ leaveBtn.addEventListener('click', () => leave());
 // --- Chat ---
 
 window.addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter' || !session || !lobby.hidden || document.activeElement === chatInput) return;
+  if (e.key !== 'Enter' || !session || !lobby.hidden || !charPanel.hidden || document.activeElement === chatInput) return;
   e.preventDefault();
   releaseAll();
   setChatOpen(true);
@@ -133,6 +146,85 @@ function closeChat() {
   chatInput.hidden = true;
   chatInput.value = '';
   if (document.activeElement === chatInput) chatInput.blur();
+}
+
+// --- Hahmovalikko (aulassa ja lämmittelyssä) ---
+
+let look = loadLook();
+const OPTIONS = { hat: HATS, pattern: PATTERNS, face: FACES };
+
+const swatches = PLAYER_COLORS.map((color, i) => {
+  const b = document.createElement('button');
+  b.className = 'swatch';
+  b.style.background = color;
+  b.setAttribute('aria-label', `Väri ${i + 1}`);
+  b.addEventListener('click', () => {
+    look.color = i;
+    lookChanged();
+  });
+  swatchesEl.append(b);
+  return b;
+});
+
+for (const row of charPanel.querySelectorAll('.optrow')) {
+  const opt = row.dataset.opt;
+  for (const btn of row.querySelectorAll('.step')) {
+    btn.addEventListener('click', () => {
+      const n = OPTIONS[opt].length;
+      look[opt] = (look[opt] + Number(btn.dataset.dir) + n) % n;
+      lookChanged();
+    });
+  }
+}
+
+function lookChanged() {
+  saveLook(look);
+  session?.setLook?.(look);
+  updateCharPanel();
+}
+
+function updateCharPanel() {
+  const taken = new Set(session?.info().takenColors ?? []);
+  swatches.forEach((b, i) => {
+    b.classList.toggle('selected', i === look.color);
+    b.classList.toggle('taken', taken.has(PLAYER_COLORS[i]));
+  });
+  colorNote.textContent = taken.has(PLAYER_COLORS[look.color])
+    ? 'Väri on jo toisella pelaajalla: saat lähimmän vapaan.'
+    : '';
+  for (const row of charPanel.querySelectorAll('.optrow')) {
+    row.querySelector('.optvalue').textContent = OPTIONS[row.dataset.opt][look[row.dataset.opt]].name;
+  }
+}
+
+function openCharPanel() {
+  setInputEnabled(false);
+  charPanel.hidden = false;
+  updateCharPanel();
+  charDoneBtn.focus();
+}
+
+function closeCharPanel() {
+  charPanel.hidden = true;
+  setInputEnabled(true);
+  document.activeElement?.blur();
+}
+
+charOpenBtn.addEventListener('click', openCharPanel);
+charBtn.addEventListener('click', openCharPanel);
+charDoneBtn.addEventListener('click', closeCharPanel);
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !charPanel.hidden) closeCharPanel();
+});
+
+// Esikatselu: hahmo kääntelee päätään.
+function drawPreview(now) {
+  const t = now / 1000;
+  previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+  previewCtx.clearRect(0, 0, preview.width, preview.height);
+  previewCtx.translate(preview.width / 2, preview.height / 2);
+  previewCtx.scale(3.4, 3.4);
+  drawCharacter(previewCtx, -4, 0, Math.sin(t * 1.3) * 0.7, 16, PLAYER_COLORS[look.color], look, 28, false);
 }
 
 updateMuteButton();
@@ -171,6 +263,10 @@ function updateRoomInfo() {
   const info = session.info();
   roomText.textContent = info.text;
   startBtn.hidden = !info.canStart;
+  charBtn.hidden = !info.canCustomize;
+  // Erä alkoi kesken muokkauksen: valikko kiinni.
+  if (!info.canCustomize && !charPanel.hidden && lobby.hidden) closeCharPanel();
+  if (!charPanel.hidden) updateCharPanel();
 }
 
 function setStatus(msg) {
@@ -221,6 +317,7 @@ ticker.onmessage = () => {
 
 function frame(now) {
   const dt = advance(now, true);
+  if (!charPanel.hidden) drawPreview(now);
   if (session) {
     session.draw(ctx, dt);
   } else {

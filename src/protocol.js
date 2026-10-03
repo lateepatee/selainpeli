@@ -1,15 +1,18 @@
 // Verkkoviestien muoto. Kaikki mitä vieraalta koneelta tulee, tarkistetaan täällä.
 //
-// Liittyjä -> host:  { type: 'hello', name }
+// Liittyjä -> host:  { type: 'hello', name, look }
+//                    { type: 'look', look }            (hahmon muutos lämmittelyssä)
+//                    { type: 'chat', text }
 //                    { type: 'input', inputs: [{ seq, up, down, left, right, aim, shoot }, ...] }
 //                    { type: 'ping', c }
 // Host -> liittyjä:  { type: 'snap', t, p: [...], b: [...], e: [...] }
 //                    { type: 'pong', c }
 //                    { type: 'reject', reason }
+//                    { type: 'chat', name, color, text, system }
 
 import { PERK_IDS } from './weapons.js';
 
-export const PEER_PREFIX = 'areena-peli-v5-';
+export const PEER_PREFIX = 'areena-peli-v6-';
 export const MAX_PLAYERS = 6;
 export const SNAPSHOT_EVERY = 2; // tickiä -> 30 snapshotia/s
 
@@ -33,6 +36,7 @@ export function encodeSnapshot(world, acks, events) {
       p.id, p.name, p.color, r1(p.x), r1(p.y), r2(p.aim), r1(p.hp), p.alive ? 1 : 0,
       r1(p.respawnTimer), p.kills, p.deaths, acks[p.id] || 0, p.score, p.wins, p.killedBy, p.zombieKills,
       ...encodeLoadout(p),
+      p.look?.hat ?? 0, p.look?.pattern ?? 0, p.look?.face ?? 0,
     ]),
     b: world.bullets.map((b) => [b.id, r1(b.x), r1(b.y), b.splash ? 1 : 0]),
     bx: [world.box.state, world.box.owner, world.box.weapon, r1(world.box.timer)],
@@ -50,6 +54,7 @@ export function decodeSnapshot(msg) {
       alive: a[7] === 1, respawnTimer: a[8], kills: a[9], deaths: a[10], ack: a[11],
       score: a[12], wins: a[13], killedBy: a[14], zombieKills: a[15],
       ...decodeLoadout(a, 16),
+      look: { hat: a[31], pattern: a[32], face: a[33] },
     };
   }
   const bullets = new Map();

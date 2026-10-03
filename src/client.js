@@ -15,7 +15,7 @@ const INTERP_DELAY = 0.1;     // s
 const CONNECT_TIMEOUT = 10000; // ms
 const HOST_TIMEOUT = 5000;     // ms ilman snapshotia -> yhteys katki
 
-export function startClient({ name, code, onReady, onFail }) {
+export function startClient({ name, code, look, onReady, onFail }) {
   let conn = null;
   let localId = null;
   let failed = false;
@@ -44,7 +44,7 @@ export function startClient({ name, code, onReady, onFail }) {
 
   peer.on('open', () => {
     conn = peer.connect(PEER_PREFIX + code, { serialization: 'json', reliable: false });
-    conn.on('open', () => conn.send({ type: 'hello', name }));
+    conn.on('open', () => conn.send({ type: 'hello', name, look }));
     conn.on('data', (msg) => {
       try {
         onMessage(msg);
@@ -261,7 +261,15 @@ export function startClient({ name, code, onReady, onFail }) {
     },
     info() {
       const ping = rtt === null ? '–' : `${Math.round(rtt)} ms`;
-      return { code, text: `Huone ${code} · ping ${ping}` };
+      const latest = snaps[snaps.length - 1];
+      return {
+        code, text: `Huone ${code} · ping ${ping}`,
+        canCustomize: latest?.phase === 'warmup',
+        takenColors: latest ? Object.values(latest.players).filter((p) => p.id !== localId).map((p) => p.color) : [],
+      };
+    },
+    setLook(look) {
+      if (conn?.open) conn.send({ type: 'look', look });
     },
     sendChat(text) {
       const clean = sanitizeChat(text);

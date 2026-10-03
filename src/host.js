@@ -6,6 +6,7 @@ import { readInput } from './input.js';
 import { botInput, forgetBot } from './bot.js';
 import { playEvents, updateAmbient, playChatBlip } from './sound.js';
 import { addChat, sanitizeChat } from './chat.js';
+import { sanitizeLook } from './appearance.js';
 import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
 import {
   PEER_PREFIX, MAX_PLAYERS, SNAPSHOT_EVERY,
@@ -19,10 +20,12 @@ const MAX_WAIT_TICKS = 4;     // kuinka kauan odotetaan väärässä järjestyks
 const HELLO_TIMEOUT = 5000;   // ms: esittäytymätön yhteys suljetaan
 const CHAT_LIMIT = 3;         // viestiä ...
 const CHAT_WINDOW = 5000;     // ... näin monessa millisekunnissa
+const LOOK_INTERVAL = 250;    // ms: hahmon muutoksia korkeintaan näin usein
 
-export function startHost({ name, bots, onRoom, onStatus }) {
+export function startHost({ name, bots, look, onRoom, onStatus }) {
   const world = createWorld();
-  const me = addPlayer(world, HOST_ID, sanitizeName(name), PLAYER_COLORS[0]);
+  const myLook = sanitizeLook(look);
+  const me = addPlayer(world, HOST_ID, sanitizeName(name), PLAYER_COLORS[myLook.color], lookParts(myLook));
   camera.x = me.x;
   camera.y = me.y;
 
@@ -87,7 +90,7 @@ export function startHost({ name, bots, onRoom, onStatus }) {
     if (client) client.lastSeen = performance.now();
 
     if (msg.type === 'hello' && !client) {
-      join(conn, msg.name);
+      join(conn, msg.name, msg.look);
     } else if (msg.type === 'input' && client && Array.isArray(msg.inputs)) {
       const inputs = msg.inputs.slice(0, 10).map(sanitizeInput).filter(Boolean).sort((a, b) => a.seq - b.seq);
       // Viestit voivat saapua väärässä järjestyksessä: jono pidetään numerojärjestyksessä.
@@ -107,12 +110,18 @@ export function startHost({ name, bots, onRoom, onStatus }) {
       client.chatTimes.push(now);
       const p = world.players[client.id];
       broadcastChat({ name: p?.name ?? '?', color: p?.color ?? '#e6e9ef', text });
+    } else if (msg.type === 'look' && client) {
+      const now = performance.now();
+      if (now - (client.lastLook || 0) < LOOK_INTERVAL) return;
+      client.lastLook = now;
+      const p = world.players[client.id];
+      if (p) applyLook(p, sanitizeLook(msg.look));
     } else if (msg.type === 'ping' && typeof msg.c === 'number') {
       conn.send({ type: 'pong', c: msg.c });
     }
   }
 
-  function join(conn, rawName) {
+  function join(conn, rawName, rawLook) {
     if (Object.keys(world.players).length >= MAX_PLAYERS) {
       if (botIds.length > 0) {
         removeBot();
@@ -124,7 +133,8 @@ export function startHost({ name, bots, onRoom, onStatus }) {
     }
     // Pelaaja-id annetaan täällä, ei oteta liittyjän peer-id:stä (ettei kukaan voi esiintyä hostina).
     const id = `p${nextClientNum++}`;
-    addPlayer(world, id, uniqueName(sanitizeName(rawName)), freeColor());
+    const look = sanitizeLook(rawLook);
+    addPlayer(world, id, uniqueName(sanitizeName(rawName)), assignColor(look.color, id), lookParts(look));
     clients.set(conn.peer, {
       id, conn,
       queue: [], lastInput: EMPTY_INPUT, ack: 0, waitTicks: 0, chatTimes: [],
@@ -176,8 +186,37 @@ export function startHost({ name, bots, onRoom, onStatus }) {
     }
   }
 
-  function freeColor() {
+  // Hahmon muutos on sallittu vain lämmittelyssä, ettei kesken erän voi naamioitua toiseksi.
+  function applyLook(p, look) {
+    if (world.phase !== 'warmup') return;
+    p.look = lookParts(look);
+    p.color = assignColor(look.color, p.id);
+  }
+
+  // Toivottu väri, jos vapaana. Botti luovuttaa värinsä ihmiselle. Muuten lähin vapaa väri.
+  function assignColor(pref, selfId) {
+    const wanted = PLAYER_COLORS[pref] ?? PLAYER_COLORS[0];
+    const holder = Object.values(world.players).find((p) => p.id !== selfId && p.color === wanted);
+    if (!holder) return wanted;
+    if (botIds.includes(holder.id)) {
+      holder.color = '';
+      holder.color = freeColor(wanted);
+      return wanted;
+    }
+    const used = new Set(Object.values(world.players).filter((p) => p.id !== selfId).map((p) => p.color));
+    const n = PLAYER_COLORS.length;
+    for (let d = 1; d < n; d++) {
+      for (const i of [pref + d, pref - d]) {
+        const c = PLAYER_COLORS[((i % n) + n) % n];
+        if (!used.has(c)) return c;
+      }
+    }
+    return wanted;
+  }
+
+  function freeColor(also = null) {
     const used = new Set(Object.values(world.players).map((p) => p.color));
+    if (also) used.add(also);
     return PLAYER_COLORS.find((c) => !used.has(c)) || PLAYER_COLORS[0];
   }
 
@@ -254,11 +293,18 @@ export function startHost({ name, bots, onRoom, onStatus }) {
         : netError ? `Ei verkkoyhteyttä (${netError}), vain botit` : 'Luodaan huonetta…';
       const canStart = (world.phase === 'warmup' || world.phase === 'gameOver')
         && Object.keys(world.players).length >= 2;
-      return { code: roomCode, text: `${room} · ${humans} pelaaja${humans === 1 ? '' : 'a'}`, canStart };
+      return {
+        code: roomCode, text: `${room} · ${humans} pelaaja${humans === 1 ? '' : 'a'}`, canStart,
+        canCustomize: world.phase === 'warmup',
+        takenColors: Object.values(world.players).filter((p) => p !== me).map((p) => p.color),
+      };
     },
     sendChat(text) {
       const clean = sanitizeChat(text);
       if (clean) broadcastChat({ name: me.name, color: me.color, text: clean });
+    },
+    setLook(look) {
+      applyLook(me, sanitizeLook(look));
     },
     startMatch() {
       return startMatch(world);
@@ -271,4 +317,8 @@ export function startHost({ name, bots, onRoom, onStatus }) {
       for (const id of botIds) forgetBot(id);
     },
   };
+}
+
+function lookParts(look) {
+  return { hat: look.hat, pattern: look.pattern, face: look.face };
 }

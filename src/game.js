@@ -64,9 +64,10 @@ export function canAct(phase) {
   return phase === 'warmup' || phase === 'playing';
 }
 
-export function addPlayer(world, id, name, color) {
+// look = { hat, pattern, face } (appearance.js). Väri tulee erikseen, koska host jakaa sen.
+export function addPlayer(world, id, name, color, look = { hat: 0, pattern: 0, face: 0 }) {
   const p = {
-    id, name, color,
+    id, name, color, look,
     x: 0, y: 0, px: 0, py: 0,   // px/py = edellisen tickin sijainti piirron interpolointiin
     aim: 0,
     hp: PLAYER_HP,

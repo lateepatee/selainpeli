@@ -54,6 +54,7 @@ export const ZOMBIE_LEVEL_TIME = 12;       // s erän kestoa per vaikeustaso
 export const ZOMBIE_MAX = 50;
 export const WARMUP_ZOMBIES = 8;
 
+// Pelaajien värit. Pelaaja valitsee hahmovalikossa, host varmistaa ettei kahdella ole samaa.
 export const PLAYER_COLORS = [
   '#4fc3f7', // sininen
   '#ff7043', // oranssi
@@ -61,4 +62,10 @@ export const PLAYER_COLORS = [
   '#ba68c8', // violetti
   '#ffd54f', // keltainen
   '#f06292', // pinkki
+  '#26c6da', // turkoosi
+  '#ef5350', // punainen
+  '#8d6e63', // ruskea
+  '#e0e0e0', // valkoinen
+  '#5c6bc0', // indigo
+  '#d4e157', // lime
 ];
