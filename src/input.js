@@ -2,6 +2,7 @@
 
 const keys = new Set();
 const mouse = { x: 0, y: 0, down: false };
+let wheelSwap = false; // hiiren rulla vaihtaa asetta (yksi pulssi)
 
 export function initInput(canvas) {
   window.addEventListener('keydown', (e) => {
@@ -27,11 +28,17 @@ export function initInput(canvas) {
     if (e.button === 0) mouse.down = false;
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('wheel', (e) => {
+    if (e.deltaY !== 0) wheelSwap = true;
+    e.preventDefault();
+  }, { passive: false });
 }
 
 // screenToWorld muuntaa hiiren ruutukoordinaatit areenan koordinaateiksi.
 export function readInput(player, screenToWorld) {
   const m = screenToWorld(mouse.x, mouse.y);
+  const swap = keys.has('KeyQ') || wheelSwap;
+  wheelSwap = false;
   return {
     up: keys.has('KeyW') || keys.has('ArrowUp'),
     down: keys.has('KeyS') || keys.has('ArrowDown'),
@@ -39,5 +46,8 @@ export function readInput(player, screenToWorld) {
     right: keys.has('KeyD') || keys.has('ArrowRight'),
     aim: Math.atan2(m.y - player.y, m.x - player.x),
     shoot: mouse.down || keys.has('Space'),
+    reload: keys.has('KeyR'),
+    interact: keys.has('KeyE') || keys.has('KeyF'),
+    swap,
   };
 }

@@ -16,11 +16,8 @@ export const PLAYER_SPEED = 220;     // px/s
 export const PLAYER_HP = 100;
 export const RESPAWN_TIME = 3;       // s
 
-export const BULLET_SPEED = 700;     // px/s
+// Ammusten nopeus, vahinko ja tulinopeus ovat asekohtaisia: weapons.js.
 export const BULLET_RADIUS = 4;
-export const BULLET_DAMAGE = 20;
-export const BULLET_LIFE = 1.2;      // s
-export const FIRE_COOLDOWN = 0.25;   // s
 
 // Erät ja pisteet
 export const TARGET_SCORE = 15;      // ensimmäinen tähän voittaa pelin
@@ -87,6 +84,8 @@ export const OBSTACLES = [
   { x: 1120, y: 470, w: 60, h: 60, crate: true },
   { x: 760, y: 130, w: 80, h: 50, crate: true },
   { x: 760, y: 820, w: 80, h: 50, crate: true },
+  // Arpalaatikko keskushuoneessa (sama paikka kuin weapons.js BOX)
+  { x: 768, y: 485, w: 64, h: 30, box: true },
 ];
 
 // Laudoitetut ikkunat ulkoseinissä: zombit kiipeävät näistä sisään.

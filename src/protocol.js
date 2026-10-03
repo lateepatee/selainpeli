@@ -7,7 +7,7 @@
 //                    { type: 'pong', c }
 //                    { type: 'reject', reason }
 
-export const PEER_PREFIX = 'areena-peli-v2-';
+export const PEER_PREFIX = 'areena-peli-v3-';
 export const MAX_PLAYERS = 6;
 export const SNAPSHOT_EVERY = 2; // tickiä -> 30 snapshotia/s
 
@@ -28,8 +28,10 @@ export function encodeSnapshot(world, acks, events) {
     p: Object.values(world.players).map((p) => [
       p.id, p.name, p.color, r1(p.x), r1(p.y), r2(p.aim), r1(p.hp), p.alive ? 1 : 0,
       r1(p.respawnTimer), p.kills, p.deaths, acks[p.id] || 0, p.score, p.wins, p.killedBy, p.zombieKills,
+      ...encodeLoadout(p),
     ]),
-    b: world.bullets.map((b) => [b.id, r1(b.x), r1(b.y)]),
+    b: world.bullets.map((b) => [b.id, r1(b.x), r1(b.y), b.splash ? 1 : 0]),
+    bx: [world.box.state, world.box.owner, world.box.weapon, r1(world.box.timer)],
     zb: world.zombies.map((z) => [z.id, r1(z.x), r1(z.y), r2(z.angle), z.emerge > 0 ? 1 : 0]),
     e: events.map((e) => ({ ...e, x: r1(e.x ?? 0), y: r1(e.y ?? 0) })),
   };
@@ -42,10 +44,11 @@ export function decodeSnapshot(msg) {
       id: a[0], name: a[1], color: a[2], x: a[3], y: a[4], aim: a[5], hp: a[6],
       alive: a[7] === 1, respawnTimer: a[8], kills: a[9], deaths: a[10], ack: a[11],
       score: a[12], wins: a[13], killedBy: a[14], zombieKills: a[15],
+      ...decodeLoadout(a, 16),
     };
   }
   const bullets = new Map();
-  for (const b of msg.b) bullets.set(b[0], { id: b[0], x: b[1], y: b[2] });
+  for (const b of msg.b) bullets.set(b[0], { id: b[0], x: b[1], y: b[2], splash: b[3] === 1 });
   const zombies = new Map();
   for (const a of Array.isArray(msg.zb) ? msg.zb : []) {
     zombies.set(a[0], { id: a[0], x: a[1], y: a[2], angle: a[3], emerging: a[4] === 1 });
@@ -55,6 +58,26 @@ export function decodeSnapshot(msg) {
     t: msg.t, players, bullets, zombies, events: msg.e,
     phase: msg.ph, phaseTimer: msg.pt, round: msg.rd,
     roundWinner: msg.rw, matchWinner: msg.mw, zone: z,
+    box: Array.isArray(msg.bx)
+      ? { state: msg.bx[0], owner: msg.bx[1], weapon: msg.bx[2], timer: msg.bx[3] }
+      : { state: 'idle', owner: null, weapon: null, timer: 0 },
+  };
+}
+
+// Raha ja aseet: [raha, ase1, ase2, valittu, lipas, varasto (-1 = rajaton), latauksen jäljellä oleva aika]
+function encodeLoadout(p) {
+  const slot = p.slots[p.cur];
+  return [
+    p.money, p.slots[0]?.id ?? null, p.slots[1]?.id ?? null, p.cur,
+    slot ? slot.mag : 0, slot && Number.isFinite(slot.reserve) ? slot.reserve : -1, r1(p.reloadTimer),
+  ];
+}
+
+function decodeLoadout(a, i) {
+  const slots = [a[i + 1] ? { id: a[i + 1] } : null, a[i + 2] ? { id: a[i + 2] } : null];
+  return {
+    money: a[i], slots, cur: a[i + 3], mag: a[i + 4],
+    reserve: a[i + 5] < 0 ? Infinity : a[i + 5], reloadTimer: a[i + 6],
   };
 }
 
@@ -73,6 +96,9 @@ export function sanitizeInput(i) {
     up: !!i.up, down: !!i.down, left: !!i.left, right: !!i.right,
     aim: Number.isFinite(aim) ? aim : 0,
     shoot: !!i.shoot,
+    reload: !!i.reload,
+    interact: !!i.interact,
+    swap: !!i.swap,
   };
 }
 

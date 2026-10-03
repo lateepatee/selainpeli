@@ -6,6 +6,7 @@ import {
   TARGET_SCORE, WIN_POINTS, ZONE_DELAY,
 } from './constants.js';
 import { lineOfSight } from './geometry.js';
+import { WEAPONS, WALL_BUYS, BOX, findInteractable } from './weapons.js';
 
 const WALL = 22;              // ulkoseinän paksuus (piirretään areenan ulkopuolelle)
 const DARKNESS = 'rgba(3, 4, 7, 0.95)';
@@ -19,7 +20,10 @@ const ZOMBIE_COLOR = '#7d9a52';
 const BLOOD = '#6b0f12';
 const ROUND_RED = '#b3121b';
 
+const MONEY_COLOR = '#ffd54f';
+const WONDER_COLOR = '#76ff03';
 const particles = [];
+const moneyPopups = [];       // { amount, time }
 const killFeed = [];
 const decals = [];            // verijäljet lattiassa
 let hurtFlash = 0;
@@ -76,6 +80,9 @@ export function cameraTarget(world, localId) {
 // Muuttaa simulaation tapahtumat efekteiksi.
 export function handleEvents(events, world, localId) {
   for (const e of events) {
+    if (e.type === 'zhit' && e.by === localId) addMoneyPopup(10);
+    if (e.type === 'zkill' && e.by === localId) addMoneyPopup(60);
+    if (e.type === 'kill' && e.killer === localId) addMoneyPopup(200);
     if (e.type === 'hit') {
       burst(e.x, e.y, world.players[e.target]?.color || '#fff', 8, 140);
       if (e.target === localId) hurtFlash = 0.6;
@@ -87,6 +94,8 @@ export function handleEvents(events, world, localId) {
       burst(e.x, e.y, BLOOD, 18, 200);
       burst(e.x, e.y, ZOMBIE_COLOR, 6, 120);
       addDecal(e.x, e.y, 14 + Math.random() * 12);
+    } else if (e.type === 'blast') {
+      burst(e.x, e.y, WONDER_COLOR, 24, 260);
     } else if (e.type === 'zattack') {
       burst(e.x, e.y, '#c62828', 10, 160);
       if (e.target === localId) hurtFlash = 1;
@@ -102,6 +111,14 @@ export function handleEvents(events, world, localId) {
       if (killFeed.length > 5) killFeed.shift();
     }
   }
+}
+
+function addMoneyPopup(amount) {
+  const last = moneyPopups[moneyPopups.length - 1];
+  // Samaan aikaan tulevat summat yhdistetään, ettei haulikko täytä ruutua.
+  if (last && performance.now() - last.time < 120) last.amount += amount;
+  else moneyPopups.push({ amount, time: performance.now() });
+  if (moneyPopups.length > 8) moneyPopups.shift();
 }
 
 function burst(x, y, color, count, speed) {
@@ -138,10 +155,10 @@ export function render(ctx, world, localId, alpha, dt) {
   drawFloor(ctx);
   drawWalls(ctx);
 
-  ctx.fillStyle = '#ffe9a8';
   for (const b of world.bullets) {
+    ctx.fillStyle = b.splash ? WONDER_COLOR : '#ffe9a8';
     ctx.beginPath();
-    ctx.arc(lerp(b.px, b.x, alpha), lerp(b.py, b.y, alpha), BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.arc(lerp(b.px, b.x, alpha), lerp(b.py, b.y, alpha), b.splash ? 6 : BULLET_RADIUS, 0, Math.PI * 2);
     ctx.fill();
   }
   for (const z of world.zombies || []) drawZombie(ctx, z, alpha);
@@ -161,6 +178,9 @@ export function render(ctx, world, localId, alpha, dt) {
   ctx.save();
   applyCamera(ctx, w, h);
   drawWallOutlines(ctx);
+  drawWindowsInDark(ctx, world.zombies || [], now);
+  drawWallBuys(ctx);
+  drawBox(ctx, world.box, now);
   if (world.zone) drawFog(ctx, world.zone, now);
   for (const p of Object.values(world.players)) {
     if (!p.alive) continue;
@@ -272,6 +292,7 @@ function drawWalls(ctx) {
   for (const win of WINDOWS) drawWindow(ctx, win);
 
   for (const r of OBSTACLES) {
+    if (r.box) continue;
     if (r.crate) {
       ctx.fillStyle = '#5a4026';
       ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -372,6 +393,7 @@ function drawZombie(ctx, z, alpha) {
 function drawPlayer(ctx, p, alpha, isLocal) {
   const x = lerp(p.px, p.x, alpha);
   const y = lerp(p.py, p.y, alpha);
+  const gun = PLAYER_RADIUS + (WEAPONS[p.slots?.[p.cur]?.id]?.length ?? 8);
 
   // Ase
   ctx.strokeStyle = '#cfd6e4';
@@ -379,7 +401,7 @@ function drawPlayer(ctx, p, alpha, isLocal) {
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.lineTo(x + Math.cos(p.aim) * (PLAYER_RADIUS + 8), y + Math.sin(p.aim) * (PLAYER_RADIUS + 8));
+  ctx.lineTo(x + Math.cos(p.aim) * gun, y + Math.sin(p.aim) * gun);
   ctx.stroke();
 
   // Runko
@@ -564,6 +586,25 @@ function drawWallOutlines(ctx) {
   ctx.strokeRect(0, 0, ARENA_W, ARENA_H);
 }
 
+// Ikkunat erottuvat pimeässäkin. Kun zombi kiipeää sisään, ikkuna sykkii punaisena.
+function drawWindowsInDark(ctx, zombies, t) {
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  for (const win of WINDOWS) drawWindow(ctx, win);
+  ctx.restore();
+
+  for (const win of WINDOWS) {
+    const climbing = zombies.some((z) => (z.emerging ?? z.emerge > 0) && Math.hypot(z.x - win.x, z.y - win.y) < 50);
+    if (!climbing) continue;
+    const pulse = 0.45 + 0.35 * Math.sin(t * 14);
+    const glow = ctx.createRadialGradient(win.x, win.y, 0, win.x, win.y, 70);
+    glow.addColorStop(0, `rgba(255, 40, 30, ${pulse})`);
+    glow.addColorStop(1, 'rgba(255, 40, 30, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(win.x - 70, win.y - 70, 140, 140);
+  }
+}
+
 // Punaiset silmät hehkuvat pimeässä, jos zombiin on näköyhteys.
 function drawZombieEyes(ctx, zombies, viewer, alpha) {
   ctx.fillStyle = '#ff2a1f';
@@ -585,6 +626,79 @@ function drawZombieEyes(ctx, zombies, viewer, alpha) {
   }
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
+}
+
+// --- Ostopaikat ---
+
+// Liidulla piirretty ase lattiaan seinän viereen. Näkyy himmeänä myös pimeässä.
+function drawWallBuys(ctx) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(235, 235, 220, 0.55)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const b of WALL_BUYS) {
+    const len = 20 + (WEAPONS[b.weapon].length ?? 10) * 1.6;
+    ctx.beginPath();
+    // Yksinkertainen aseen siluetti: piippu, runko, kahva, perä
+    ctx.moveTo(b.x - len / 2, b.y - 3);
+    ctx.lineTo(b.x + len / 2, b.y - 3);
+    ctx.lineTo(b.x + len / 2, b.y + 1);
+    ctx.lineTo(b.x - len / 6, b.y + 1);
+    ctx.lineTo(b.x - len / 6 - 4, b.y + 10);
+    ctx.lineTo(b.x - len / 6 - 10, b.y + 10);
+    ctx.lineTo(b.x - len / 6 - 7, b.y + 1);
+    ctx.lineTo(b.x - len / 2, b.y + 1);
+    ctx.lineTo(b.x - len / 2 - 6, b.y + 6);
+    ctx.lineTo(b.x - len / 2 - 6, b.y - 5);
+    ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.font = '600 10px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(235, 235, 220, 0.45)';
+  for (const b of WALL_BUYS) ctx.fillText(`${WEAPONS[b.weapon].name} ${b.price} $`, b.x, b.y + 24);
+  ctx.restore();
+}
+
+function drawBox(ctx, box, t) {
+  const x = BOX.x - BOX.w / 2;
+  const y = BOX.y - BOX.h / 2;
+  // Hehku, jotta laatikon löytää pimeässä
+  const glow = ctx.createRadialGradient(BOX.x, BOX.y, 0, BOX.x, BOX.y, 70);
+  glow.addColorStop(0, 'rgba(120, 180, 255, 0.28)');
+  glow.addColorStop(1, 'rgba(120, 180, 255, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(BOX.x - 70, BOX.y - 70, 140, 140);
+
+  ctx.fillStyle = '#4a3320';
+  ctx.fillRect(x, y, BOX.w, BOX.h);
+  ctx.strokeStyle = '#8fc3ff';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, BOX.w - 2, BOX.h - 2);
+  ctx.fillStyle = '#8fc3ff';
+  ctx.font = '700 16px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('?', BOX.x, BOX.y + 6);
+
+  if (!box || box.state === 'idle') return;
+  let label;
+  if (box.state === 'spinning') {
+    const ids = Object.keys(WEAPONS).filter((id) => id !== 'pistol');
+    label = WEAPONS[ids[Math.floor(t * 12) % ids.length]].name;
+  } else {
+    label = WEAPONS[box.weapon]?.name ?? '?';
+  }
+  ctx.font = '700 15px system-ui, sans-serif';
+  ctx.fillStyle = box.state === 'ready' ? '#ffffff' : '#8fc3ff';
+  ctx.fillText(label, BOX.x, y - 14);
+  if (box.state === 'ready') {
+    const frac = Math.max(0, Math.min(1, box.timer / 8));
+    ctx.fillStyle = '#00000088';
+    ctx.fillRect(BOX.x - 30, y - 8, 60, 4);
+    ctx.fillStyle = '#8fc3ff';
+    ctx.fillRect(BOX.x - 30, y - 8, 60 * frac, 4);
+  }
 }
 
 // Lamput värisevät ja sammuvat välillä hetkeksi.
@@ -657,12 +771,75 @@ function drawHud(ctx, world, localId, w, h, dt) {
   drawScoreboard(ctx, world, localId, w, inMatch);
   drawKillFeed(ctx);
   drawPhaseBanner(ctx, world, me, w, h);
+  if (me?.alive) {
+    drawLoadout(ctx, me, w, h);
+    drawPrompt(ctx, world, me, w, h);
+  }
 
-  // Ohje alhaalla
-  ctx.font = '500 13px system-ui, sans-serif';
+  // Ohje alhaalla keskellä
+  ctx.font = '500 12px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a5162';
+  ctx.fillText('WASD liiku · hiiri ampuu · R lataa · Q / rulla vaihtaa asetta · E osta', w / 2, h - 12);
+}
+
+// Oikea alakulma: raha, ase ja ammukset.
+function drawLoadout(ctx, me, w, h) {
+  const slot = me.slots?.[me.cur];
+  const weapon = WEAPONS[slot?.id];
+  if (!weapon) return;
+  const mag = slot.mag ?? me.mag;
+  const reserve = slot.reserve ?? me.reserve;
+  const right = w - 24;
+
   ctx.textAlign = 'right';
-  ctx.fillStyle = '#5c6476';
-  ctx.fillText('WASD liiku · hiiri tähtää · klikkaus ampuu', w - 20, h - 20);
+  ctx.font = '700 26px system-ui, sans-serif';
+  ctx.fillStyle = MONEY_COLOR;
+  ctx.fillText(`${me.money} $`, right, h - 100);
+
+  // Ansaitut rahat nousevat summan yläpuolelle ja haalistuvat.
+  const now = performance.now();
+  ctx.font = '700 16px system-ui, sans-serif';
+  for (const m of moneyPopups) {
+    const age = (now - m.time) / 1000;
+    if (age > 1) continue;
+    ctx.globalAlpha = 1 - age;
+    ctx.fillText(`+${m.amount}`, right - 10, h - 130 - age * 30);
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.font = '600 15px system-ui, sans-serif';
+  ctx.fillStyle = '#c0c6d4';
+  const other = me.slots[1 - me.cur];
+  ctx.fillText(other ? `${weapon.name}  ·  ${WEAPONS[other.id].name}` : weapon.name, right, h - 70);
+
+  ctx.font = '700 30px system-ui, sans-serif';
+  ctx.fillStyle = mag === 0 ? '#ff5252' : '#e6e9ef';
+  const reserveText = Number.isFinite(reserve) ? reserve : '∞';
+  ctx.fillText(`${mag} / ${reserveText}`, right, h - 34);
+
+  if (me.reloadTimer > 0) {
+    const frac = 1 - me.reloadTimer / weapon.reload;
+    ctx.fillStyle = '#00000088';
+    ctx.fillRect(right - 140, h - 26, 140, 5);
+    ctx.fillStyle = '#e6e9ef';
+    ctx.fillRect(right - 140, h - 26, 140 * frac, 5);
+  }
+}
+
+// Ruudun alalaidassa: mitä E tekee tässä kohdassa.
+function drawPrompt(ctx, world, me, w, h) {
+  const it = findInteractable(world, me);
+  if (!it) return;
+  const afford = me.money >= it.price;
+  const text = it.kind === 'wait' ? it.label : afford ? `E – ${it.label}` : `${it.label} – rahaa ei riitä`;
+  ctx.font = '600 18px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  const tw = ctx.measureText(text).width;
+  ctx.fillStyle = '#000000aa';
+  ctx.fillRect(w / 2 - tw / 2 - 14, h - 150, tw + 28, 34);
+  ctx.fillStyle = afford ? '#ffffff' : '#ff8a80';
+  ctx.fillText(text, w / 2, h - 127);
 }
 
 function drawScoreboard(ctx, world, localId, w, inMatch) {

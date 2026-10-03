@@ -2,6 +2,7 @@
 
 import { ARENA_W, ARENA_H, OBSTACLES } from './constants.js';
 import { lineOfSight, pointInRect } from './geometry.js';
+import { WALL_BUYS } from './weapons.js';
 
 const SIGHT_RANGE = 550;
 const ZOMBIE_THREAT_RANGE = 280; // tätä lähempänä oleva zombi ammutaan ensin
@@ -34,6 +35,7 @@ export function botInput(world, id, dt) {
   brain.reaction -= dt;
 
   let moveX, moveY, aim, shoot;
+  let interact = false;
   if (target) {
     const toX = target.x - me.x;
     const toY = target.y - me.y;
@@ -50,10 +52,17 @@ export function botInput(world, id, dt) {
       moveY = zone.y - me.y;
     }
   } else {
-    moveX = brain.waypoint.x - me.x;
-    moveY = brain.waypoint.y - me.y;
+    // Rauhallisella hetkellä ostetaan parempi ase, jos rahaa on.
+    const buy = shoppingTarget(me, zone);
+    const goal = buy || brain.waypoint;
+    moveX = goal.x - me.x;
+    moveY = goal.y - me.y;
     aim = Math.atan2(moveY, moveX);
     shoot = false;
+    if (buy && Math.hypot(moveX, moveY) < 35) {
+      brain.pulse = !brain.pulse; // E-napin painallus vaatii reunan
+      interact = brain.pulse;
+    }
   }
 
   const t = 0.3; // kynnys, ettei botti nyi paikallaan
@@ -65,7 +74,23 @@ export function botInput(world, id, dt) {
     right: moveX / len > t,
     aim,
     shoot,
+    interact,
   };
+}
+
+function shoppingTarget(me, zone) {
+  if (me.slots?.[1]) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for (const b of WALL_BUYS) {
+    if (b.price > me.money || !insideZone(b, zone, 0.85)) continue;
+    const d = Math.hypot(b.x - me.x, b.y - me.y);
+    if (d < bestDist) {
+      best = b;
+      bestDist = d;
+    }
+  }
+  return best;
 }
 
 export function forgetBot(id) {

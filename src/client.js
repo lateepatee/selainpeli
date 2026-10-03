@@ -191,7 +191,7 @@ export function startClient({ name, code, onReady, onFail }) {
       if (!ba) continue;
       const x = ba.x + (bb.x - ba.x) * t;
       const y = ba.y + (bb.y - ba.y) * t;
-      bullets.push({ x, y, px: x, py: y });
+      bullets.push({ x, y, px: x, py: y, splash: bb.splash });
     }
 
     const zombies = [];
@@ -210,6 +210,7 @@ export function startClient({ name, code, onReady, onFail }) {
       players, bullets, zombies,
       phase: latest.phase, phaseTimer: latest.phaseTimer, round: latest.round,
       roundWinner: latest.roundWinner, matchWinner: latest.matchWinner, zone: latest.zone,
+      box: latest.box,
     };
     return { view, due };
   }

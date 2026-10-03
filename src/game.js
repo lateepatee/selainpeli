@@ -11,14 +11,21 @@
 import {
   ARENA_W, ARENA_H, OBSTACLES,
   PLAYER_RADIUS, PLAYER_SPEED, PLAYER_HP, RESPAWN_TIME,
-  BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE, BULLET_LIFE, FIRE_COOLDOWN,
+  BULLET_RADIUS,
   TARGET_SCORE, WIN_POINTS, KILL_POINTS, COUNTDOWN_TIME, ROUND_END_TIME, GAME_OVER_TIME,
   ZONE_DELAY, ZONE_SHRINK_TIME, ZONE_MIN_R, ZONE_DPS, ZONE_DPS_FINAL, ZOMBIE_RADIUS,
 } from './constants.js';
 import { clamp, pointInRect, pushCircleOutOfRect } from './geometry.js';
 import { stepZombies } from './zombies.js';
+import {
+  WEAPONS, START_MONEY, MONEY_ZOMBIE_HIT, MONEY_ZOMBIE_KILL, MONEY_PLAYER_KILL, SWAP_TIME,
+  BOX_PRICE, BOX_SPIN_TIME, BOX_TAKE_TIME, findInteractable, rollBoxWeapon,
+} from './weapons.js';
 
-export const EMPTY_INPUT = { up: false, down: false, left: false, right: false, aim: 0, shoot: false };
+export const EMPTY_INPUT = {
+  up: false, down: false, left: false, right: false, aim: 0, shoot: false,
+  reload: false, interact: false, swap: false,
+};
 
 export function createWorld() {
   return {
@@ -36,7 +43,12 @@ export function createWorld() {
     nextZombieId: 1,
     zombieTimer: 0,
     flowAt: 0,            // milloin zombien reitit lasketaan seuraavaksi
+    box: idleBox(),
   };
+}
+
+function idleBox() {
+  return { state: 'idle', timer: 0, owner: null, weapon: null };
 }
 
 // Voiko tässä vaiheessa liikkua ja ampua?
@@ -59,6 +71,11 @@ export function addPlayer(world, id, name, color) {
     wins: 0,
     zombieKills: 0,
     killedBy: null,
+    money: START_MONEY,
+    slots: [null, null],   // { id, mag, reserve }
+    cur: 0,
+    reloadTimer: 0,
+    prev: { reload: false, interact: false, swap: false }, // napin painallus = reuna
   };
   world.players[id] = p;
   spawn(world, p);
@@ -92,6 +109,7 @@ function startRound(world) {
   world.bullets = [];
   world.zombies = [];
   world.zombieTimer = 2;
+  world.box = idleBox();
   world.roundWinner = null;
   world.zone = createZone();
   world.phase = 'countdown';
@@ -100,7 +118,8 @@ function startRound(world) {
   const players = Object.values(world.players);
   for (const p of players) p.alive = false;
   for (const p of players) {
-    spawn(world, p);
+    // Raha säilyy pelin sisällä erästä toiseen, aseet aloitetaan alusta.
+    spawn(world, p, world.round > 1);
     p.killedBy = null;
   }
 }
@@ -140,15 +159,21 @@ export function step(world, inputs, dt) {
 
     const input = inputs[p.id] || EMPTY_INPUT;
     p.aim = input.aim;
+    const pressed = (k) => input[k] && !p.prev[k];
+    const swap = pressed('swap');
+    const reload = pressed('reload');
+    const interactNow = pressed('interact');
+    p.prev = { reload: !!input.reload, interact: !!input.interact, swap: !!input.swap };
     if (!acting) continue;
 
     movePlayer(p, input, dt);
-    p.cooldown -= dt;
-    if (input.shoot && p.cooldown <= 0) {
-      p.cooldown = FIRE_COOLDOWN;
-      fire(world, p);
-    }
+    if (swap) swapWeapon(p);
+    if (reload) startReload(p);
+    if (interactNow) interact(world, p, events);
+    updateWeapon(world, p, input, dt);
   }
+
+  stepBox(world, dt);
 
   stepZombies(world, dt, events, (p, amount, ev) => damagePlayer(world, p, amount, null, 'zombie', ev));
   stepBullets(world, dt, events);
@@ -179,6 +204,7 @@ function toWarmup(world) {
   world.zone = null;
   world.bullets = [];
   world.zombies = [];
+  world.box = idleBox();
   for (const p of Object.values(world.players)) {
     if (!p.alive) spawn(world, p);
   }
@@ -239,21 +265,126 @@ export function movePlayer(p, input, dt) {
   p.y = clamp(p.y, PLAYER_RADIUS, ARENA_H - PLAYER_RADIUS);
 }
 
-function fire(world, p) {
-  const dirX = Math.cos(p.aim);
-  const dirY = Math.sin(p.aim);
-  const muzzle = PLAYER_RADIUS + 6;
-  const x = p.x + dirX * muzzle;
-  const y = p.y + dirY * muzzle;
-  world.bullets.push({
-    id: world.nextBulletId++,
-    owner: p.id,
-    x, y, px: x, py: y,
-    vx: dirX * BULLET_SPEED,
-    vy: dirY * BULLET_SPEED,
-    life: BULLET_LIFE,
-  });
+// --- Aseet ---
+
+function giveWeapon(p, id) {
+  const w = WEAPONS[id];
+  const slot = { id, mag: w.mag, reserve: w.reserve };
+  if (!p.slots[1]) {
+    p.slots[1] = slot;
+    p.cur = 1;
+  } else {
+    p.slots[p.cur] = slot;
+  }
+  p.reloadTimer = 0;
+  p.cooldown = SWAP_TIME;
 }
+
+function swapWeapon(p) {
+  if (!p.slots[1]) return;
+  p.cur = 1 - p.cur;
+  p.reloadTimer = 0;
+  p.cooldown = Math.max(p.cooldown, SWAP_TIME);
+}
+
+function startReload(p) {
+  const slot = p.slots[p.cur];
+  const w = WEAPONS[slot.id];
+  if (p.reloadTimer > 0 || slot.mag >= w.mag || slot.reserve <= 0) return;
+  p.reloadTimer = w.reload;
+}
+
+function updateWeapon(world, p, input, dt) {
+  p.cooldown -= dt;
+  const slot = p.slots[p.cur];
+  const w = WEAPONS[slot.id];
+
+  if (p.reloadTimer > 0) {
+    p.reloadTimer -= dt;
+    if (p.reloadTimer <= 0) {
+      const take = Math.min(w.mag - slot.mag, slot.reserve);
+      slot.mag += take;
+      slot.reserve -= take;
+      p.reloadTimer = 0;
+    }
+    return;
+  }
+  if (slot.mag <= 0) {
+    startReload(p);
+    return;
+  }
+  if (input.shoot && p.cooldown <= 0) {
+    p.cooldown = w.cooldown;
+    slot.mag--;
+    fire(world, p, w);
+  }
+}
+
+function fire(world, p, w) {
+  const muzzle = PLAYER_RADIUS + 6;
+  const x = p.x + Math.cos(p.aim) * muzzle;
+  const y = p.y + Math.sin(p.aim) * muzzle;
+  for (let i = 0; i < w.pellets; i++) {
+    const a = p.aim + (Math.random() - 0.5) * 2 * w.spread;
+    world.bullets.push({
+      id: world.nextBulletId++,
+      owner: p.id,
+      x, y, px: x, py: y,
+      vx: Math.cos(a) * w.speed,
+      vy: Math.sin(a) * w.speed,
+      life: w.life,
+      damage: w.damage,
+      splash: w.splash || 0,
+      splashDamage: w.splashDamage || 0,
+    });
+  }
+}
+
+// --- Ostaminen ja arpalaatikko ---
+
+function interact(world, p, events) {
+  const it = findInteractable(world, p);
+  if (!it || p.money < it.price) return;
+
+  if (it.kind === 'wall') {
+    p.money -= it.price;
+    giveWeapon(p, it.buy.weapon);
+    events.push({ type: 'buy', id: p.id });
+  } else if (it.kind === 'ammo') {
+    const slot = p.slots.find((sl) => sl?.id === it.buy.weapon);
+    const w = WEAPONS[slot.id];
+    if (slot.mag >= w.mag && slot.reserve >= w.reserve) return;
+    p.money -= it.price;
+    slot.mag = w.mag;
+    slot.reserve = w.reserve;
+    events.push({ type: 'buy', id: p.id });
+  } else if (it.kind === 'box') {
+    p.money -= BOX_PRICE;
+    world.box = { state: 'spinning', timer: BOX_SPIN_TIME, owner: p.id, weapon: rollBoxWeapon(p) };
+    events.push({ type: 'boxOpen', id: p.id });
+  } else if (it.kind === 'take') {
+    giveWeapon(p, world.box.weapon);
+    world.box = idleBox();
+    events.push({ type: 'buy', id: p.id });
+  }
+}
+
+function stepBox(world, dt) {
+  const box = world.box;
+  if (box.state === 'idle') return;
+  box.timer -= dt;
+  const owner = world.players[box.owner];
+  if (!owner?.alive) {
+    world.box = idleBox();
+  } else if (box.state === 'spinning' && box.timer <= 0) {
+    box.state = 'ready';
+    box.timer = BOX_TAKE_TIME;
+  } else if (box.state === 'ready' && box.timer <= 0) {
+    world.box = idleBox();
+  }
+}
+
+// --- Ammukset ---
 
 function stepBullets(world, dt, events) {
   const players = Object.values(world.players);
@@ -267,12 +398,12 @@ function stepBullets(world, dt, events) {
     b.y += b.vy * dt;
     b.life -= dt;
 
-    if (b.life <= 0) return false;
-    if (b.x < 0 || b.y < 0 || b.x > ARENA_W || b.y > ARENA_H) return false;
+    if (b.life <= 0) return explodeIfSplash(world, b, events);
+    if (b.x < 0 || b.y < 0 || b.x > ARENA_W || b.y > ARENA_H) return explodeIfSplash(world, b, events);
     for (const r of OBSTACLES) {
       if (pointInRect(b.x, b.y, r, BULLET_RADIUS)) {
         events.push({ type: 'wall', x: b.x, y: b.y });
-        return false;
+        return explodeIfSplash(world, b, events);
       }
     }
 
@@ -283,8 +414,8 @@ function stepBullets(world, dt, events) {
       if (dx * dx + dy * dy > hitRadius * hitRadius) continue;
 
       events.push({ type: 'hit', x: b.x, y: b.y, target: p.id, by: b.owner });
-      damagePlayer(world, p, BULLET_DAMAGE, b.owner, 'player', events);
-      return false;
+      damagePlayer(world, p, b.damage, b.owner, 'player', events);
+      return explodeIfSplash(world, b, events);
     }
 
     for (const z of world.zombies) {
@@ -293,18 +424,43 @@ function stepBullets(world, dt, events) {
       const dy = z.y - b.y;
       if (dx * dx + dy * dy > zombieHitRadius * zombieHitRadius) continue;
 
-      z.hp -= BULLET_DAMAGE;
-      events.push({ type: 'zhit', x: b.x, y: b.y });
-      if (z.hp <= 0) {
-        const shooter = world.players[b.owner];
-        if (shooter) shooter.zombieKills++;
-        events.push({ type: 'zkill', x: z.x, y: z.y, by: b.owner });
-      }
-      return false;
+      events.push({ type: 'zhit', x: b.x, y: b.y, by: b.owner });
+      damageZombie(world, z, b.damage, b.owner, events);
+      return explodeIfSplash(world, b, events);
     }
     return true;
   });
   world.zombies = world.zombies.filter((z) => z.hp > 0);
+}
+
+// Palauttaa aina false (ammus poistuu). Räjähtävä ammus vahingoittaa ensin ympäristöä.
+function explodeIfSplash(world, b, events) {
+  if (!b.splash) return false;
+  events.push({ type: 'blast', x: b.x, y: b.y, r: b.splash });
+  for (const z of world.zombies) {
+    if (z.hp > 0 && Math.hypot(z.x - b.x, z.y - b.y) < b.splash + ZOMBIE_RADIUS) {
+      damageZombie(world, z, b.splashDamage, b.owner, events);
+    }
+  }
+  for (const p of Object.values(world.players)) {
+    if (p.alive && p.id !== b.owner && Math.hypot(p.x - b.x, p.y - b.y) < b.splash + PLAYER_RADIUS) {
+      damagePlayer(world, p, b.splashDamage, b.owner, 'player', events);
+    }
+  }
+  return false;
+}
+
+function damageZombie(world, z, amount, ownerId, events) {
+  const shooter = world.players[ownerId];
+  z.hp -= amount;
+  if (shooter) shooter.money += MONEY_ZOMBIE_HIT;
+  if (z.hp <= 0) {
+    if (shooter) {
+      shooter.zombieKills++;
+      shooter.money += MONEY_ZOMBIE_KILL;
+    }
+    events.push({ type: 'zkill', x: z.x, y: z.y, by: ownerId });
+  }
 }
 
 // cause: 'player' | 'zombie' | 'fog'. attackerId on pelaajan id tai null.
@@ -323,13 +479,14 @@ function kill(world, victim, killerId, cause, events) {
   const killer = killerId && world.players[killerId];
   if (killer) {
     killer.kills++;
+    killer.money += MONEY_PLAYER_KILL;
     if (world.phase === 'playing') killer.score += KILL_POINTS;
   }
   events.push({ type: 'kill', x: victim.x, y: victim.y, victim: victim.id, killer: killerId, cause });
 }
 
 // Etsii satunnaisen paikan, joka ei ole esteen sisällä eikä liian lähellä muita.
-function spawn(world, p) {
+function spawn(world, p, keepMoney = false) {
   const others = Object.values(world.players).filter((o) => o !== p && o.alive);
   let best = null;
   let bestDist = -1;
@@ -352,4 +509,9 @@ function spawn(world, p) {
   p.alive = true;
   p.cooldown = 0;
   p.respawnTimer = 0;
+  // Joka syntymässä aloitetaan pistoolilla. Raha nollautuu paitsi erien välillä.
+  if (!keepMoney) p.money = START_MONEY;
+  p.slots = [{ id: 'pistol', mag: WEAPONS.pistol.mag, reserve: WEAPONS.pistol.reserve }, null];
+  p.cur = 0;
+  p.reloadTimer = 0;
 }
