@@ -150,3 +150,16 @@ button:disabled {
 #roominfo button:hover {
   background: #3a4252;
 }
+
+#roominfo button.primary {
+  background: #2f6fd6;
+  border-color: #2f6fd6;
+}
+
+#roominfo button.primary:hover {
+  background: #3b7fe8;
+}
+
+#roominfo button[hidden] {
+  display: none;
+}

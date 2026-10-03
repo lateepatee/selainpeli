@@ -3,9 +3,9 @@
 // kahden snapshotin välistä, jotta liike näyttää sulavalta.
 
 import { TICK } from './constants.js';
-import { movePlayer } from './game.js';
+import { movePlayer, canAct } from './game.js';
 import { readInput } from './input.js';
-import { render, handleEvents, followCamera, screenToWorld, camera } from './render.js';
+import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
 import { PEER_PREFIX, decodeSnapshot } from './protocol.js';
 
 const INTERP_DELAY = 0.1;     // s
@@ -113,11 +113,14 @@ export function startClient({ name, code, onReady, onFail }) {
     }
     const prev = predicted;
     predicted = { x: self.x, y: self.y, px: 0, py: 0 };
-    for (const input of pending) movePlayer(predicted, input, TICK);
-    if (prev) maxCorrection = Math.max(maxCorrection, Math.hypot(prev.x - predicted.x, prev.y - predicted.y));
-    // Säilytetään edellinen piirtosijainti, ettei korjaus nyi interpoloinnissa.
-    predicted.px = prev ? prev.px : predicted.x;
-    predicted.py = prev ? prev.py : predicted.y;
+    for (const input of pending) {
+      if (input.move) movePlayer(predicted, input, TICK);
+    }
+    const jump = prev ? Math.hypot(prev.x - predicted.x, prev.y - predicted.y) : Infinity;
+    if (jump < 100) maxCorrection = Math.max(maxCorrection, jump);
+    // Säilytetään edellinen piirtosijainti, ettei pieni korjaus nyi. Isossa hypyssä (uusi erä) ei.
+    predicted.px = jump < 100 ? prev.px : predicted.x;
+    predicted.py = jump < 100 ? prev.py : predicted.y;
   }
 
   function tickOnce() {
@@ -126,10 +129,13 @@ export function startClient({ name, code, onReady, onFail }) {
     const input = { seq: ++seq, ...readInput(base, screenToWorld) };
     lastAim = input.aim;
     if (predicted) {
+      // Lähtölaskennan ja erän tuloksen aikana host ei liikuta pelaajia, joten ei ennusteessakaan.
+      const latest = snaps[snaps.length - 1];
+      const move = !!latest && canAct(latest.phase);
       predicted.px = predicted.x;
       predicted.py = predicted.y;
-      movePlayer(predicted, input, TICK);
-      pending.push(input);
+      if (move) movePlayer(predicted, input, TICK);
+      pending.push({ ...input, move });
     }
     conn.send({ type: 'input', inputs: [input] });
   }
@@ -192,7 +198,12 @@ export function startClient({ name, code, onReady, onFail }) {
     const due = [];
     while (eventQueue.length > 0 && eventQueue[0].t <= renderT) due.push(eventQueue.shift().e);
 
-    return { view: { players, bullets }, due };
+    const view = {
+      players, bullets,
+      phase: latest.phase, phaseTimer: latest.phaseTimer, round: latest.round,
+      roundWinner: latest.roundWinner, matchWinner: latest.matchWinner, zone: latest.zone,
+    };
+    return { view, due };
   }
 
   return {
@@ -212,8 +223,8 @@ export function startClient({ name, code, onReady, onFail }) {
       }
       const { view, due } = buildView(acc / TICK);
       handleEvents(due, view);
-      const self = view.players[localId];
-      if (self?.alive) followCamera(self, dt);
+      const target = cameraTarget(view, localId);
+      if (target) followCamera(target, dt);
       render(ctx, view, localId, 1, dt);
     },
     info() {

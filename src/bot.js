@@ -15,8 +15,9 @@ export function botInput(world, id, dt) {
 
   brain.wanderTimer -= dt;
   brain.strafeTimer -= dt;
-  if (brain.wanderTimer <= 0 || reached(me, brain.waypoint)) {
-    brain.waypoint = randomWaypoint();
+  const zone = world.zone;
+  if (brain.wanderTimer <= 0 || reached(me, brain.waypoint) || !insideZone(brain.waypoint, zone, 0.8)) {
+    brain.waypoint = randomWaypoint(zone);
     brain.wanderTimer = 3 + Math.random() * 3;
   }
   if (brain.strafeTimer <= 0) {
@@ -42,6 +43,11 @@ export function botInput(world, id, dt) {
     const approach = dist > 300 ? 1 : dist < 200 ? -1 : 0;
     moveX = (toX / dist) * approach + (-toY / dist) * brain.strafe;
     moveY = (toY / dist) * approach + (toX / dist) * brain.strafe;
+    // Alueen reunalla taistelu saa odottaa: ensin sisään.
+    if (zone && !insideZone(me, zone, 0.9)) {
+      moveX = zone.x - me.x;
+      moveY = zone.y - me.y;
+    }
   } else {
     moveX = brain.waypoint.x - me.x;
     moveY = brain.waypoint.y - me.y;
@@ -67,7 +73,7 @@ export function forgetBot(id) {
 
 function newBrain() {
   return {
-    waypoint: randomWaypoint(),
+    waypoint: randomWaypoint(null),
     wanderTimer: 0,
     strafe: 1,
     strafeTimer: 0,
@@ -90,13 +96,17 @@ function nearestVisibleEnemy(world, me) {
   return best;
 }
 
-function randomWaypoint() {
-  for (let i = 0; i < 20; i++) {
-    const x = 60 + Math.random() * (ARENA_W - 120);
-    const y = 60 + Math.random() * (ARENA_H - 120);
-    if (!OBSTACLES.some((r) => pointInRect(x, y, r, 30))) return { x, y };
+function randomWaypoint(zone) {
+  for (let i = 0; i < 30; i++) {
+    const p = { x: 60 + Math.random() * (ARENA_W - 120), y: 60 + Math.random() * (ARENA_H - 120) };
+    if (!OBSTACLES.some((r) => pointInRect(p.x, p.y, r, 30)) && insideZone(p, zone, 0.8)) return p;
   }
-  return { x: ARENA_W / 2, y: 60 };
+  return zone ? { x: zone.x, y: zone.y } : { x: ARENA_W / 2, y: 60 };
+}
+
+// Onko piste alueen sisällä (margin < 1 = selvästi sisällä). Ilman aluetta aina tosi.
+function insideZone(p, zone, margin) {
+  return !zone || Math.hypot(p.x - zone.x, p.y - zone.y) < zone.r * margin;
 }
 
 function reached(me, wp) {

@@ -3,10 +3,12 @@
 import {
   ARENA_W, ARENA_H, OBSTACLES, VIEW_W, VIEW_H,
   PLAYER_RADIUS, PLAYER_HP, BULLET_RADIUS,
+  TARGET_SCORE, WIN_POINTS, ZONE_DELAY,
 } from './constants.js';
 
 const particles = [];
 const killFeed = [];
+const ZONE_COLOR = '#ff5252';
 
 export const camera = { x: ARENA_W / 2, y: ARENA_H / 2, zoom: 1 };
 
@@ -30,6 +32,16 @@ export function followCamera(target, dt) {
   camera.y += (target.y - camera.y) * k;
 }
 
+// Kenen perässä kamera kulkee: oma hahmo, tai kuolleena tappaja tai joku elossa oleva.
+export function cameraTarget(world, localId) {
+  const me = world.players[localId];
+  if (me?.alive) return me;
+  if (world.phase === 'warmup') return null;
+  const killer = me?.killedBy && world.players[me.killedBy];
+  if (killer?.alive) return killer;
+  return Object.values(world.players).find((p) => p.alive) || null;
+}
+
 // Muuttaa simulaation tapahtumat efekteiksi.
 export function handleEvents(events, world) {
   for (const e of events) {
@@ -40,7 +52,7 @@ export function handleEvents(events, world) {
     } else if (e.type === 'kill') {
       burst(e.x, e.y, world.players[e.victim]?.color || '#fff', 30, 260);
       killFeed.push({
-        killer: world.players[e.killer],
+        killer: e.killer ? world.players[e.killer] : null,
         victim: world.players[e.victim],
         time: performance.now(),
       });
@@ -89,6 +101,7 @@ export function render(ctx, world, localId, alpha, dt) {
   }
 
   drawParticles(ctx, dt);
+  if (world.zone) drawZone(ctx, world.zone);
   ctx.restore();
 
   // --- HUD ---
@@ -122,6 +135,22 @@ function drawFloor(ctx) {
     ctx.fillStyle = '#353c4e';
     ctx.fillRect(r.x, r.y, r.w, 6);
   }
+}
+
+// Alueen ulkopuoli tummennetaan punertavaksi, reunalle viiva.
+function drawZone(ctx, z) {
+  const pad = 2000;
+  ctx.beginPath();
+  ctx.rect(-pad, -pad, ARENA_W + 2 * pad, ARENA_H + 2 * pad);
+  ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2, true);
+  ctx.fillStyle = '#ff525226';
+  ctx.fill('evenodd');
+
+  ctx.beginPath();
+  ctx.arc(z.x, z.y, z.r, 0, Math.PI * 2);
+  ctx.strokeStyle = ZONE_COLOR;
+  ctx.lineWidth = 3;
+  ctx.stroke();
 }
 
 function drawPlayer(ctx, p, alpha, isLocal) {
@@ -183,48 +212,71 @@ function drawParticles(ctx, dt) {
   ctx.globalAlpha = 1;
 }
 
+// --- HUD ---
+
 function drawHud(ctx, world, localId, w, h) {
   const me = world.players[localId];
+  const inMatch = world.phase !== 'warmup';
   ctx.textBaseline = 'alphabetic';
+
+  if (me?.alive && world.zone && outsideZone(me, world.zone)) drawZoneWarning(ctx, w, h);
 
   // Oma HP vasemmassa alakulmassa
   if (me) {
     ctx.font = '700 28px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillStyle = me.alive ? '#e6e9ef' : '#ff5252';
-    ctx.fillText(`${Math.max(0, me.hp)} HP`, 20, h - 24);
+    ctx.fillText(`${Math.max(0, Math.ceil(me.hp))} HP`, 20, h - 24);
   }
 
-  // Pistetaulu oikeassa yläkulmassa
-  const rows = Object.values(world.players).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+  drawScoreboard(ctx, world, localId, w, inMatch);
+  drawKillFeed(ctx);
+  drawPhaseBanner(ctx, world, me, w, h);
+
+  // Ohje alhaalla
+  ctx.font = '500 13px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#5c6476';
+  ctx.fillText('WASD liiku · hiiri tähtää · klikkaus ampuu', w - 20, h - 20);
+}
+
+function drawScoreboard(ctx, world, localId, w, inMatch) {
+  const rows = Object.values(world.players).sort(inMatch
+    ? (a, b) => b.score - a.score || b.kills - a.kills
+    : (a, b) => b.kills - a.kills || a.deaths - b.deaths);
+  const x0 = w - 220;
   ctx.font = '600 14px system-ui, sans-serif';
   ctx.fillStyle = '#00000066';
-  ctx.fillRect(w - 200, 12, 188, 28 + rows.length * 22);
+  ctx.fillRect(x0, 52, 208, 28 + rows.length * 22);
   ctx.fillStyle = '#8a93a6';
   ctx.textAlign = 'left';
-  ctx.fillText('Pelaaja', w - 188, 32);
+  ctx.fillText(inMatch ? `Pisteet (${TARGET_SCORE})` : 'Lämmittely', x0 + 12, 72);
   ctx.textAlign = 'right';
-  ctx.fillText('K / D', w - 24, 32);
+  ctx.fillText(inMatch ? 'Pist.  Tap.' : 'K / D', w - 24, 72);
   rows.forEach((p, i) => {
-    const y = 56 + i * 22;
+    const y = 96 + i * 22;
+    ctx.globalAlpha = inMatch && !p.alive ? 0.45 : 1;
     ctx.fillStyle = p.color;
     ctx.textAlign = 'left';
-    ctx.fillText((p.id === localId ? '▸ ' : '') + p.name, w - 188, y);
+    ctx.fillText((p.id === localId ? '▸ ' : '') + p.name, x0 + 12, y);
     ctx.fillStyle = '#e6e9ef';
     ctx.textAlign = 'right';
-    ctx.fillText(`${p.kills} / ${p.deaths}`, w - 24, y);
+    ctx.fillText(inMatch ? `${p.score}     ${p.kills}` : `${p.kills} / ${p.deaths}`, w - 24, y);
   });
+  ctx.globalAlpha = 1;
+}
 
-  // Tapposyöte vasemmassa yläkulmassa
+function drawKillFeed(ctx) {
   const now = performance.now();
+  ctx.font = '600 14px system-ui, sans-serif';
   ctx.textAlign = 'left';
-  let y = 32;
+  let y = 72;
   for (const k of killFeed) {
     const age = (now - k.time) / 1000;
     if (age > 5) continue;
     ctx.globalAlpha = Math.min(1, 5 - age);
-    ctx.fillStyle = k.killer?.color || '#fff';
-    const killerName = k.killer?.name || '?';
+    const killerName = k.killer ? k.killer.name : 'Alue';
+    ctx.fillStyle = k.killer ? k.killer.color : ZONE_COLOR;
     ctx.fillText(killerName, 20, y);
     const kw = ctx.measureText(killerName + '  ').width;
     ctx.fillStyle = '#8a93a6';
@@ -234,25 +286,120 @@ function drawHud(ctx, world, localId, w, h) {
     y += 22;
   }
   ctx.globalAlpha = 1;
+}
 
-  // Kuolinruutu
-  if (me && !me.alive) {
-    ctx.fillStyle = '#00000088';
-    ctx.fillRect(0, h / 2 - 50, w, 100);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#fff';
-    ctx.font = '700 32px system-ui, sans-serif';
-    ctx.fillText('Kuolit', w / 2, h / 2 - 6);
-    ctx.font = '500 18px system-ui, sans-serif';
-    ctx.fillStyle = '#c0c6d4';
-    ctx.fillText(`Takaisin peliin ${Math.ceil(me.respawnTimer)} s`, w / 2, h / 2 + 26);
+function drawPhaseBanner(ctx, world, me, w, h) {
+  const name = (id) => world.players[id]?.name || '?';
+  const color = (id) => world.players[id]?.color || '#fff';
+  ctx.textAlign = 'center';
+
+  switch (world.phase) {
+    case 'warmup':
+      smallBanner(ctx, w, 'Lämmittely', 'Host aloittaa pelin, kun kaikki ovat paikalla');
+      if (me && !me.alive) {
+        centerBox(ctx, w, h, 'Kuolit', `Takaisin peliin ${Math.ceil(me.respawnTimer)} s`);
+      }
+      break;
+
+    case 'countdown':
+      ctx.fillStyle = '#fff';
+      ctx.font = '800 96px system-ui, sans-serif';
+      ctx.fillText(String(Math.max(1, Math.ceil(world.phaseTimer))), w / 2, h / 2 - 40);
+      ctx.font = '600 22px system-ui, sans-serif';
+      ctx.fillStyle = '#c0c6d4';
+      ctx.fillText(me?.alive ? `Erä ${world.round}` : `Erä ${world.round} · liityt seuraavaan erään`, w / 2, h / 2 + 4);
+      break;
+
+    case 'playing': {
+      const all = Object.values(world.players);
+      const alive = all.filter((p) => p.alive).length;
+      const z = world.zone;
+      const zoneText = !z ? '' : z.elapsed < ZONE_DELAY
+        ? ` · alue kutistuu ${Math.ceil(ZONE_DELAY - z.elapsed)} s` : ' · alue kutistuu!';
+      smallBanner(ctx, w, `Erä ${world.round}`, `Elossa ${alive}/${all.length}${zoneText}`);
+      if (me && !me.alive) {
+        ctx.font = '600 16px system-ui, sans-serif';
+        ctx.fillStyle = '#c0c6d4';
+        ctx.fillText('Kuolit – katsot muiden peliä seuraavaan erään asti', w / 2, h - 60);
+      }
+      break;
+    }
+
+    case 'roundEnd':
+      if (world.roundWinner) {
+        centerBox(ctx, w, h, `${name(world.roundWinner)} voitti erän!`, `+${WIN_POINTS} pistettä`, color(world.roundWinner));
+      } else {
+        centerBox(ctx, w, h, 'Tasapeli', 'Kukaan ei selvinnyt');
+      }
+      break;
+
+    case 'gameOver':
+      drawGameOver(ctx, world, w, h);
+      break;
   }
+}
 
-  // Ohje alhaalla
-  ctx.font = '500 13px system-ui, sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#5c6476';
-  ctx.fillText('WASD liiku · hiiri tähtää · klikkaus ampuu', w - 20, h - 20);
+function smallBanner(ctx, w, title, sub) {
+  ctx.textAlign = 'center';
+  ctx.font = '700 18px system-ui, sans-serif';
+  ctx.fillStyle = '#e6e9ef';
+  ctx.fillText(title, w / 2, 72);
+  ctx.font = '500 14px system-ui, sans-serif';
+  ctx.fillStyle = '#8a93a6';
+  ctx.fillText(sub, w / 2, 92);
+}
+
+function centerBox(ctx, w, h, title, sub, titleColor = '#fff') {
+  ctx.fillStyle = '#00000099';
+  ctx.fillRect(0, h / 2 - 54, w, 108);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = titleColor;
+  ctx.font = '800 34px system-ui, sans-serif';
+  ctx.fillText(title, w / 2, h / 2 - 6);
+  ctx.font = '500 18px system-ui, sans-serif';
+  ctx.fillStyle = '#c0c6d4';
+  ctx.fillText(sub, w / 2, h / 2 + 28);
+}
+
+function drawGameOver(ctx, world, w, h) {
+  const winner = world.players[world.matchWinner];
+  const rows = Object.values(world.players).sort((a, b) => b.score - a.score);
+  const boxH = 130 + rows.length * 28;
+  const top = h / 2 - boxH / 2;
+
+  ctx.fillStyle = '#000000b3';
+  ctx.fillRect(0, top, w, boxH);
+  ctx.textAlign = 'center';
+  ctx.font = '800 40px system-ui, sans-serif';
+  ctx.fillStyle = winner?.color || '#fff';
+  ctx.fillText(`${winner?.name || '?'} voitti pelin!`, w / 2, top + 54);
+
+  ctx.font = '600 18px system-ui, sans-serif';
+  rows.forEach((p, i) => {
+    const y = top + 100 + i * 28;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = p.color;
+    ctx.fillText(`${i + 1}. ${p.name}`, w / 2 - 150, y);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#e6e9ef';
+    ctx.fillText(`${p.score} p · ${p.wins} erää · ${p.kills} tappoa`, w / 2 + 170, y);
+  });
+}
+
+function drawZoneWarning(ctx, w, h) {
+  const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.7);
+  g.addColorStop(0, '#ff525200');
+  g.addColorStop(1, '#ff525266');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  ctx.textAlign = 'center';
+  ctx.font = '700 20px system-ui, sans-serif';
+  ctx.fillStyle = ZONE_COLOR;
+  ctx.fillText('Palaa alueelle!', w / 2, h - 90);
+}
+
+function outsideZone(p, z) {
+  return Math.hypot(p.x - z.x, p.y - z.y) > z.r;
 }
 
 function lerp(a, b, t) {

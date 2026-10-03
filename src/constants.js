@@ -22,6 +22,21 @@ export const BULLET_DAMAGE = 20;
 export const BULLET_LIFE = 1.2;      // s
 export const FIRE_COOLDOWN = 0.25;   // s
 
+// Erät ja pisteet
+export const TARGET_SCORE = 15;      // ensimmäinen tähän voittaa pelin
+export const WIN_POINTS = 3;         // erän viimeinen eloonjäänyt
+export const KILL_POINTS = 1;
+export const COUNTDOWN_TIME = 3;     // s ennen erän alkua
+export const ROUND_END_TIME = 4;     // s erän tuloksen näyttö
+export const GAME_OVER_TIME = 10;    // s lopputuloksen näyttö, sitten lämmittelyyn
+
+// Kutistuva alue
+export const ZONE_DELAY = 20;        // s ennen kuin alue alkaa kutistua
+export const ZONE_SHRINK_TIME = 60;  // s täydestä pienimpään
+export const ZONE_MIN_R = 110;
+export const ZONE_DPS = 8;           // vahinko/s alueen ulkopuolella
+export const ZONE_DPS_FINAL = 20;    // kun alue on täysin kutistunut
+
 export const PLAYER_COLORS = [
   '#4fc3f7', // sininen
   '#ff7043', // oranssi

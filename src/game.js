@@ -1,10 +1,19 @@
 // Pelin simulaatio. Ei piirtämistä, ei DOMia: tila sisään, syötteet sisään, uusi tila ulos.
 // Moninpelissä host ajaa tätä ja lähettää tilan muille.
+//
+// Vaiheet (world.phase):
+//   warmup    lämmittely: kuoleman jälkeen syntyy uudelleen, pisteitä ei lasketa
+//   countdown erän alku: kaikki paikoillaan, ei voi liikkua eikä ampua
+//   playing   erä käynnissä: ei uudelleensyntymistä, alue kutistuu
+//   roundEnd  erän tulos näkyy hetken
+//   gameOver  pelin voittaja näkyy hetken, sitten takaisin lämmittelyyn
 
 import {
   ARENA_W, ARENA_H, OBSTACLES,
   PLAYER_RADIUS, PLAYER_SPEED, PLAYER_HP, RESPAWN_TIME,
   BULLET_SPEED, BULLET_RADIUS, BULLET_DAMAGE, BULLET_LIFE, FIRE_COOLDOWN,
+  TARGET_SCORE, WIN_POINTS, KILL_POINTS, COUNTDOWN_TIME, ROUND_END_TIME, GAME_OVER_TIME,
+  ZONE_DELAY, ZONE_SHRINK_TIME, ZONE_MIN_R, ZONE_DPS, ZONE_DPS_FINAL,
 } from './constants.js';
 
 export const EMPTY_INPUT = { up: false, down: false, left: false, right: false, aim: 0, shoot: false };
@@ -15,7 +24,18 @@ export function createWorld() {
     players: {},   // id -> pelaaja
     bullets: [],
     nextBulletId: 1,
+    phase: 'warmup',
+    phaseTimer: 0,
+    round: 0,
+    zone: null,           // { x, y, r, r0, elapsed }
+    roundWinner: null,    // id tai null (tasapeli)
+    matchWinner: null,
   };
+}
+
+// Voiko tässä vaiheessa liikkua ja ampua?
+export function canAct(phase) {
+  return phase === 'warmup' || phase === 'playing';
 }
 
 export function addPlayer(world, id, name, color) {
@@ -29,9 +49,14 @@ export function addPlayer(world, id, name, color) {
     respawnTimer: 0,
     kills: 0,
     deaths: 0,
+    score: 0,
+    wins: 0,
+    killedBy: null,
   };
   world.players[id] = p;
   spawn(world, p);
+  // Kesken pelin liittyvä katsoo seuraavaan erään asti.
+  if (world.phase !== 'warmup') p.alive = false;
   return p;
 }
 
@@ -39,29 +64,75 @@ export function removePlayer(world, id) {
   delete world.players[id];
 }
 
+// Host kutsuu tätä "Aloita peli" -napista. Palauttaa false, jos pelaajia on liian vähän.
+export function startMatch(world) {
+  if (Object.keys(world.players).length < 2) return false;
+  for (const p of Object.values(world.players)) {
+    p.score = 0;
+    p.wins = 0;
+    p.kills = 0;
+    p.deaths = 0;
+  }
+  world.round = 0;
+  world.matchWinner = null;
+  startRound(world);
+  return true;
+}
+
+function startRound(world) {
+  world.round++;
+  world.bullets = [];
+  world.roundWinner = null;
+  world.zone = createZone();
+  world.phase = 'countdown';
+  world.phaseTimer = COUNTDOWN_TIME;
+
+  const players = Object.values(world.players);
+  for (const p of players) p.alive = false;
+  for (const p of players) {
+    spawn(world, p);
+    p.killedBy = null;
+  }
+}
+
+function createZone() {
+  // Keskipiste sellainen, että pienin ympyrä mahtuu areenalle.
+  const m = ZONE_MIN_R + 40;
+  const x = m + Math.random() * (ARENA_W - 2 * m);
+  const y = m + Math.random() * (ARENA_H - 2 * m);
+  // Aloitussäde kattaa koko areenan.
+  const r0 = Math.max(Math.hypot(x, y), Math.hypot(ARENA_W - x, y), Math.hypot(x, ARENA_H - y), Math.hypot(ARENA_W - x, ARENA_H - y));
+  return { x, y, r: r0, r0, elapsed: 0 };
+}
+
 // Etenee simulaatiota yhden tickin. inputs: id -> syöte. Palauttaa tapahtumat (osumat, tapot)
 // efektejä ja tapposyötettä varten.
 export function step(world, inputs, dt) {
   const events = [];
   world.time += dt;
+  world.phaseTimer -= dt;
+  const acting = canAct(world.phase);
 
   for (const p of Object.values(world.players)) {
     p.px = p.x;
     p.py = p.y;
 
     if (!p.alive) {
-      p.respawnTimer -= dt;
-      if (p.respawnTimer <= 0) {
-        spawn(world, p);
-        events.push({ type: 'spawn', id: p.id });
+      if (world.phase === 'warmup') {
+        p.respawnTimer -= dt;
+        if (p.respawnTimer <= 0) {
+          spawn(world, p);
+          events.push({ type: 'spawn', id: p.id });
+        }
       }
       continue;
     }
 
     const input = inputs[p.id] || EMPTY_INPUT;
-    movePlayer(p, input, dt);
-
     p.aim = input.aim;
+    if (!acting) continue;
+
+    movePlayer(p, input, dt);
     p.cooldown -= dt;
     if (input.shoot && p.cooldown <= 0) {
       p.cooldown = FIRE_COOLDOWN;
@@ -70,7 +141,75 @@ export function step(world, inputs, dt) {
   }
 
   stepBullets(world, dt, events);
+
+  if (world.phase === 'playing') {
+    stepZone(world, dt, events);
+    checkRoundEnd(world, events);
+  }
+  advancePhase(world, events);
   return events;
+}
+
+function advancePhase(world, events) {
+  if (world.phaseTimer > 0) return;
+  if (world.phase === 'countdown') {
+    world.phase = 'playing';
+    events.push({ type: 'roundStart', round: world.round });
+  } else if (world.phase === 'roundEnd') {
+    if (Object.keys(world.players).length >= 2) startRound(world);
+    else toWarmup(world);
+  } else if (world.phase === 'gameOver') {
+    toWarmup(world);
+  }
+}
+
+function toWarmup(world) {
+  world.phase = 'warmup';
+  world.zone = null;
+  world.bullets = [];
+  for (const p of Object.values(world.players)) {
+    if (!p.alive) spawn(world, p);
+  }
+}
+
+function stepZone(world, dt, events) {
+  const z = world.zone;
+  z.elapsed += dt;
+  const shrink = Math.min(1, Math.max(0, (z.elapsed - ZONE_DELAY) / ZONE_SHRINK_TIME));
+  z.r = z.r0 + (ZONE_MIN_R - z.r0) * shrink;
+  const dps = shrink >= 1 ? ZONE_DPS_FINAL : ZONE_DPS;
+
+  for (const p of Object.values(world.players)) {
+    if (!p.alive || Math.hypot(p.x - z.x, p.y - z.y) <= z.r) continue;
+    p.hp -= dps * dt;
+    if (p.hp <= 0) kill(world, p, null, events);
+  }
+}
+
+function checkRoundEnd(world, events) {
+  const alive = Object.values(world.players).filter((p) => p.alive);
+  if (alive.length > 1) return;
+
+  const winner = alive[0] || null;
+  world.roundWinner = winner ? winner.id : null;
+  if (winner) {
+    winner.score += WIN_POINTS;
+    winner.wins++;
+  }
+  world.bullets = [];
+  events.push({ type: 'roundEnd', winner: world.roundWinner });
+
+  const ranked = Object.values(world.players).sort((a, b) => b.score - a.score);
+  const top = ranked[0];
+  if (top && top.score >= TARGET_SCORE && (!ranked[1] || top.score > ranked[1].score)) {
+    world.phase = 'gameOver';
+    world.phaseTimer = GAME_OVER_TIME;
+    world.matchWinner = top.id;
+    events.push({ type: 'gameOver', winner: top.id });
+  } else {
+    world.phase = 'roundEnd';
+    world.phaseTimer = ROUND_END_TIME;
+  }
 }
 
 // Exportattu, koska liittyjä ennustaa oman liikkeensä samalla koodilla.
@@ -140,13 +279,18 @@ function stepBullets(world, dt, events) {
   });
 }
 
+// killerId null = alue tappoi.
 function kill(world, victim, killerId, events) {
   victim.alive = false;
   victim.hp = 0;
   victim.deaths++;
   victim.respawnTimer = RESPAWN_TIME;
-  const killer = world.players[killerId];
-  if (killer) killer.kills++;
+  victim.killedBy = killerId;
+  const killer = killerId && world.players[killerId];
+  if (killer) {
+    killer.kills++;
+    if (world.phase === 'playing') killer.score += KILL_POINTS;
+  }
   events.push({ type: 'kill', x: victim.x, y: victim.y, victim: victim.id, killer: killerId });
 }
 

@@ -1,10 +1,10 @@
 // Host: ajaa simulaatiota, ottaa vastaan liittyjien syötteet ja lähettää tilan kaikille.
 
 import { TICK, PLAYER_COLORS } from './constants.js';
-import { createWorld, addPlayer, removePlayer, step, EMPTY_INPUT } from './game.js';
+import { createWorld, addPlayer, removePlayer, step, startMatch, EMPTY_INPUT } from './game.js';
 import { readInput } from './input.js';
 import { botInput, forgetBot } from './bot.js';
-import { render, handleEvents, followCamera, screenToWorld, camera } from './render.js';
+import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
 import {
   PEER_PREFIX, MAX_PLAYERS, SNAPSHOT_EVERY,
   encodeSnapshot, sanitizeName, sanitizeInput, randomRoomCode,
@@ -185,14 +185,20 @@ export function startHost({ name, bots, onRoom, onStatus }) {
         tickOnce();
         acc -= TICK;
       }
-      if (me.alive) followCamera(me, dt);
+      const target = cameraTarget(world, HOST_ID);
+      if (target) followCamera(target, dt);
       render(ctx, world, HOST_ID, acc / TICK, dt);
     },
     info() {
       const humans = clients.size + 1;
       const room = roomCode ? `Huone ${roomCode}`
         : netError ? `Ei verkkoyhteyttä (${netError}), vain botit` : 'Luodaan huonetta…';
-      return { code: roomCode, text: `${room} · ${humans} pelaaja${humans === 1 ? '' : 'a'}` };
+      const canStart = (world.phase === 'warmup' || world.phase === 'gameOver')
+        && Object.keys(world.players).length >= 2;
+      return { code: roomCode, text: `${room} · ${humans} pelaaja${humans === 1 ? '' : 'a'}`, canStart };
+    },
+    startMatch() {
+      return startMatch(world);
     },
     debug: () => ({ world, clients }),
     destroy() {

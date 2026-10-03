@@ -20,6 +20,7 @@ const roomInfo = document.getElementById('roominfo');
 const roomText = document.getElementById('roomtext');
 const copyBtn = document.getElementById('copylink');
 const leaveBtn = document.getElementById('leave');
+const startBtn = document.getElementById('start');
 
 resize(canvas);
 window.addEventListener('resize', () => resize(canvas));
@@ -91,6 +92,12 @@ function showGame() {
 
 leaveBtn.addEventListener('click', () => leave());
 
+startBtn.addEventListener('click', () => {
+  session?.startMatch?.();
+  startBtn.blur();
+  updateRoomInfo();
+});
+
 copyBtn.addEventListener('click', async () => {
   const code = session?.info().code;
   if (!code) return;
@@ -107,7 +114,10 @@ copyBtn.addEventListener('click', async () => {
 
 setInterval(updateRoomInfo, 500);
 function updateRoomInfo() {
-  if (session && !roomInfo.hidden) roomText.textContent = session.info().text;
+  if (!session || roomInfo.hidden) return;
+  const info = session.info();
+  roomText.textContent = info.text;
+  startBtn.hidden = !info.canStart;
 }
 
 function setStatus(msg) {
