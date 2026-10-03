@@ -1,0 +1,24 @@
+# Riippuvuudet ja build
+node_modules/
+dist/
+
+# Salaisuudet ja paikalliset asetukset
+.env
+.env.*
+*.pem
+*.key
+*.p12
+secrets*
+
+# Editorit ja käyttöjärjestelmä
+.vscode/
+.idea/
+.claude/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Lokit ja väliaikaiset
+*.log
+*.tmp

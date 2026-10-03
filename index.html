@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Areena</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="lobby" class="overlay">
+    <div class="panel">
+      <h1>Areena</h1>
+
+      <label class="field">
+        <span>Nimesi</span>
+        <input id="name" maxlength="16" autocomplete="off" placeholder="Pelaaja">
+      </label>
+
+      <section>
+        <h2>Luo huone</h2>
+        <div class="row">
+          <label class="field small">
+            <span>Botteja</span>
+            <select id="bots">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+            </select>
+          </label>
+          <button id="host">Luo huone</button>
+        </div>
+        <p class="hint">Saat huonekoodin ja linkin, jonka voit jakaa kavereille. Botit väistyvät, kun huone täyttyy.</p>
+      </section>
+
+      <section>
+        <h2>Liity huoneeseen</h2>
+        <div class="row">
+          <label class="field small">
+            <span>Koodi</span>
+            <input id="code" maxlength="4" autocomplete="off" placeholder="ABCD">
+          </label>
+          <button id="join">Liity</button>
+        </div>
+      </section>
+
+      <p id="status" class="status"></p>
+    </div>
+  </div>
+
+  <div id="roominfo" hidden>
+    <span id="roomtext"></span>
+    <button id="copylink">Kopioi linkki</button>
+    <button id="leave">Poistu</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
