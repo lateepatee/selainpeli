@@ -52,9 +52,10 @@ export function botInput(world, id, dt) {
       moveY = zone.y - me.y;
     }
   } else {
-    // Rauhallisella hetkellä ostetaan parempi ase, jos rahaa on.
-    const buy = shoppingTarget(me, zone);
-    const goal = buy || brain.waypoint;
+    // Rauhallisella hetkellä haetaan lähellä oleva tehoste tai ostetaan parempi ase.
+    const powerup = nearbyPowerup(world, me, zone);
+    const buy = powerup ? null : shoppingTarget(me, zone);
+    const goal = powerup || buy || brain.waypoint;
     moveX = goal.x - me.x;
     moveY = goal.y - me.y;
     aim = Math.atan2(moveY, moveX);
@@ -76,6 +77,19 @@ export function botInput(world, id, dt) {
     shoot,
     interact,
   };
+}
+
+function nearbyPowerup(world, me, zone) {
+  let best = null;
+  let bestDist = 350;
+  for (const pu of world.powerups || []) {
+    const d = Math.hypot(pu.x - me.x, pu.y - me.y);
+    if (d < bestDist && insideZone(pu, zone, 0.95) && lineOfSight(me.x, me.y, pu.x, pu.y)) {
+      best = pu;
+      bestDist = d;
+    }
+  }
+  return best;
 }
 
 function shoppingTarget(me, zone) {

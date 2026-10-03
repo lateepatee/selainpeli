@@ -143,6 +143,8 @@ export function stepZombies(world, dt, events, damagePlayer) {
   world.zombieTimer -= dt;
   if (world.zombieTimer <= 0 && world.zombies.length < maxZombies) {
     spawnZombie(world, alive, level);
+    const z = world.zombies[world.zombies.length - 1];
+    events.push({ type: 'zemerge', x: z.x, y: z.y });
     world.zombieTimer = warmup ? 1.5 : Math.max(0.25, 1.2 - 0.2 * level);
   }
 

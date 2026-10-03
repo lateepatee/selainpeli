@@ -82,7 +82,7 @@ export function rollBoxWeapon(p) {
 }
 
 // Mitä pelaaja voi tässä kohdassa tehdä E:llä? null jos ei mitään.
-// Palauttaa { kind: 'wall' | 'ammo' | 'box' | 'take' | 'wait', price, label, buy }.
+// Palauttaa { kind: 'wall' | 'ammo' | 'box' | 'take' | 'perk' | 'wait', price, label, buy, perk }.
 export function findInteractable(world, p) {
   if (!p?.alive) return null;
 
@@ -93,6 +93,13 @@ export function findInteractable(world, p) {
       return { kind: 'take', price: 0, label: `Ota ${WEAPONS[box.weapon].name}` };
     }
     return { kind: 'wait', price: 0, label: box.state === 'spinning' ? 'Arpalaatikko pyörii…' : 'Laatikko on varattu' };
+  }
+
+  for (const m of PERK_MACHINES) {
+    if (Math.hypot(p.x - m.x, p.y - m.y) > INTERACT_RANGE) continue;
+    const perk = PERKS[m.perk];
+    if (p.perks?.[m.perk]) return { kind: 'wait', price: 0, label: `${perk.name} on jo juotu` };
+    return { kind: 'perk', price: perk.price, label: `Juo ${perk.name} (${perk.price} $)`, perk: m.perk };
   }
 
   let best = null;
@@ -111,3 +118,43 @@ export function findInteractable(world, p) {
   }
   return { kind: 'wall', price: best.price, label: `Osta ${w.name} (${best.price} $)`, buy: best };
 }
+
+// --- Juoma-automaatit (voimassa erän loppuun) ---
+
+export const PERKS = {
+  armor: { name: 'Panssarijuoma', short: 'P', price: 1000, color: '#e53935' },
+  reload: { name: 'Pikalataus', short: 'L', price: 800, color: '#43a047' },
+  rapid: { name: 'Tuplatuli', short: 'T', price: 900, color: '#fb8c00' },
+};
+export const PERK_IDS = Object.keys(PERKS);
+export const ARMOR_HP = 175;          // Panssarijuoman maksimi-HP
+export const RELOAD_PERK_MUL = 0.5;   // latausaika kerrotaan tällä
+export const RAPID_PERK_MUL = 0.75;   // ampumisväli kerrotaan tällä
+
+// Automaatit kartan kulmissa. Samat paikat ovat esteinä constants.js:ssä.
+export const PERK_MACHINES = [
+  { perk: 'rapid', x: 60, y: 80 },
+  { perk: 'reload', x: 1540, y: 80 },
+  { perk: 'armor', x: 60, y: 920 },
+];
+export const MACHINE_SIZE = 40;
+
+export function maxHpOf(p) {
+  return p.perks?.armor ? ARMOR_HP : 100;
+}
+
+// --- Tehosteet: putoavat zombeista, ensimmäinen poimija hyötyy ---
+
+export const POWERUPS = {
+  ammo: { name: 'Täydet ammukset', short: 'A', color: '#ffd54f' },
+  insta: { name: 'Kertaisku', short: 'K', color: '#ff5252', duration: 15 },
+  nuke: { name: 'Ydinpommi', short: 'Y', color: '#ffffff', money: 400 },
+  double: { name: 'Tuplarahat', short: '2x', color: '#69f0ae', duration: 20 },
+};
+export const POWERUP_IDS = Object.keys(POWERUPS);
+export const POWERUP_DROP_CHANCE = 0.12;
+export const POWERUP_MAX_ON_FLOOR = 2;
+// Arvontapainot: vahvin (ydinpommi) harvinaisin.
+export const POWERUP_WEIGHTS = { ammo: 35, insta: 25, double: 25, nuke: 15 };
+export const POWERUP_LIFE = 15;       // s lattialla
+export const POWERUP_PICKUP_RANGE = 26;

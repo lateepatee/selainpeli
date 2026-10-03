@@ -1,7 +1,7 @@
 // Näppäimistö ja hiiri -> pelaajan syöte.
 
 const keys = new Set();
-const mouse = { x: 0, y: 0, down: false };
+const mouse = { x: 0, y: 0, down: false, right: false };
 let wheelSwap = false; // hiiren rulla vaihtaa asetta (yksi pulssi)
 
 export function initInput(canvas) {
@@ -15,6 +15,7 @@ export function initInput(canvas) {
   window.addEventListener('blur', () => {
     keys.clear();
     mouse.down = false;
+    mouse.right = false;
   });
 
   canvas.addEventListener('mousemove', (e) => {
@@ -23,9 +24,11 @@ export function initInput(canvas) {
   });
   canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) mouse.down = true;
+    if (e.button === 2) mouse.right = true;
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) mouse.down = false;
+    if (e.button === 2) mouse.right = false;
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('wheel', (e) => {
@@ -49,5 +52,6 @@ export function readInput(player, screenToWorld) {
     reload: keys.has('KeyR'),
     interact: keys.has('KeyE') || keys.has('KeyF'),
     swap,
+    dash: keys.has('ShiftLeft') || keys.has('ShiftRight') || mouse.right,
   };
 }

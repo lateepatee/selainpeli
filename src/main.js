@@ -5,6 +5,7 @@ import { resize } from './render.js';
 import { startHost } from './host.js';
 import { startClient } from './client.js';
 import { sanitizeName } from './protocol.js';
+import { initAudio, toggleMute, isMuted } from './sound.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -21,6 +22,7 @@ const roomText = document.getElementById('roomtext');
 const copyBtn = document.getElementById('copylink');
 const leaveBtn = document.getElementById('leave');
 const startBtn = document.getElementById('start');
+const muteBtn = document.getElementById('mute');
 
 resize(canvas);
 window.addEventListener('resize', () => resize(canvas));
@@ -40,6 +42,7 @@ if (roomParam) {
 }
 
 hostBtn.addEventListener('click', () => {
+  initAudio();
   const name = currentName();
   startSession(startHost({
     name,
@@ -55,6 +58,7 @@ codeInput.addEventListener('keydown', (e) => {
 });
 
 function join() {
+  initAudio();
   const code = codeInput.value.trim().toUpperCase();
   if (!/^[A-Z]{4}$/.test(code)) {
     setStatus('Huonekoodi on neljä kirjainta.');
@@ -93,6 +97,16 @@ function showGame() {
 }
 
 leaveBtn.addEventListener('click', () => leave());
+
+updateMuteButton();
+muteBtn.addEventListener('click', () => {
+  toggleMute();
+  updateMuteButton();
+  muteBtn.blur();
+});
+function updateMuteButton() {
+  muteBtn.textContent = isMuted() ? 'Äänet: pois' : 'Äänet: päällä';
+}
 
 startBtn.addEventListener('click', () => {
   session?.startMatch?.();

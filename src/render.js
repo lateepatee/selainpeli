@@ -3,10 +3,13 @@
 import {
   ARENA_W, ARENA_H, OBSTACLES, WINDOWS, LAMPS, VIEW_W, VIEW_H,
   PLAYER_RADIUS, PLAYER_HP, BULLET_RADIUS, ZOMBIE_RADIUS,
-  TARGET_SCORE, WIN_POINTS, ZONE_DELAY,
+  TARGET_SCORE, WIN_POINTS, ZONE_DELAY, DASH_COOLDOWN_TICKS,
 } from './constants.js';
 import { lineOfSight } from './geometry.js';
-import { WEAPONS, WALL_BUYS, BOX, findInteractable } from './weapons.js';
+import {
+  WEAPONS, WALL_BUYS, BOX, findInteractable,
+  PERKS, PERK_IDS, PERK_MACHINES, MACHINE_SIZE, RELOAD_PERK_MUL, maxHpOf, POWERUPS,
+} from './weapons.js';
 
 const WALL = 22;              // ulkoseinän paksuus (piirretään areenan ulkopuolelle)
 const DARKNESS = 'rgba(3, 4, 7, 0.95)';
@@ -24,6 +27,8 @@ const MONEY_COLOR = '#ffd54f';
 const WONDER_COLOR = '#76ff03';
 const particles = [];
 const moneyPopups = [];       // { amount, time }
+let announcement = null;      // { text, color, time } iso ilmoitus ruudun yläosaan
+let flash = 0;                // ydinpommin valkoinen välähdys
 const killFeed = [];
 const decals = [];            // verijäljet lattiassa
 let hurtFlash = 0;
@@ -94,6 +99,15 @@ export function handleEvents(events, world, localId) {
       burst(e.x, e.y, BLOOD, 18, 200);
       burst(e.x, e.y, ZOMBIE_COLOR, 6, 120);
       addDecal(e.x, e.y, 14 + Math.random() * 12);
+    } else if (e.type === 'pickup') {
+      const def = POWERUPS[e.kind];
+      burst(e.x, e.y, def?.color || '#fff', 20, 200);
+      if (e.by === localId) announce(`${def?.name}!`, def?.color);
+      else announce(`${world.players[e.by]?.name || '?'} sai: ${def?.name}`, '#c0c6d4', true);
+    } else if (e.type === 'nuke') {
+      flash = 1;
+    } else if (e.type === 'perk' && e.by === localId) {
+      announce(PERKS[e.perk].name, PERKS[e.perk].color);
     } else if (e.type === 'blast') {
       burst(e.x, e.y, WONDER_COLOR, 24, 260);
     } else if (e.type === 'zattack') {
@@ -111,6 +125,10 @@ export function handleEvents(events, world, localId) {
       if (killFeed.length > 5) killFeed.shift();
     }
   }
+}
+
+function announce(text, color = '#fff', small = false) {
+  announcement = { text, color, small, time: performance.now() };
 }
 
 function addMoneyPopup(amount) {
@@ -181,6 +199,8 @@ export function render(ctx, world, localId, alpha, dt) {
   drawWindowsInDark(ctx, world.zombies || [], now);
   drawWallBuys(ctx);
   drawBox(ctx, world.box, now);
+  drawMachines(ctx, now);
+  drawPowerups(ctx, world.powerups || [], now);
   if (world.zone) drawFog(ctx, world.zone, now);
   for (const p of Object.values(world.players)) {
     if (!p.alive) continue;
@@ -292,7 +312,7 @@ function drawWalls(ctx) {
   for (const win of WINDOWS) drawWindow(ctx, win);
 
   for (const r of OBSTACLES) {
-    if (r.box) continue;
+    if (r.box || r.machine) continue;
     if (r.crate) {
       ctx.fillStyle = '#5a4026';
       ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -429,7 +449,7 @@ function drawPlayerLabel(ctx, p, alpha) {
   const by = y - PLAYER_RADIUS - 9;
   ctx.fillStyle = '#00000088';
   ctx.fillRect(bx, by, bw, 4);
-  const frac = Math.max(0, p.hp / PLAYER_HP);
+  const frac = Math.max(0, Math.min(1, p.hp / maxHpOf(p)));
   ctx.fillStyle = frac > 0.5 ? '#7bd88f' : frac > 0.25 ? '#ffd54f' : '#ff5252';
   ctx.fillRect(bx, by, bw * frac, 4);
 }
@@ -701,6 +721,63 @@ function drawBox(ctx, box, t) {
   }
 }
 
+// Juoma-automaatit hehkuvat omalla värillään, jotta ne löytää pimeässä.
+function drawMachines(ctx, t) {
+  for (const m of PERK_MACHINES) {
+    const perk = PERKS[m.perk];
+    const half = MACHINE_SIZE / 2;
+    const glow = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, 75);
+    glow.addColorStop(0, hexAlpha(perk.color, 0.3 + 0.05 * Math.sin(t * 2 + m.x)));
+    glow.addColorStop(1, hexAlpha(perk.color, 0));
+    ctx.fillStyle = glow;
+    ctx.fillRect(m.x - 75, m.y - 75, 150, 150);
+
+    ctx.fillStyle = '#1b1d22';
+    ctx.fillRect(m.x - half, m.y - half, MACHINE_SIZE, MACHINE_SIZE);
+    ctx.strokeStyle = perk.color;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(m.x - half + 2, m.y - half + 2, MACHINE_SIZE - 4, MACHINE_SIZE - 4);
+    ctx.fillStyle = perk.color;
+    ctx.font = '800 18px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(perk.short, m.x, m.y + 6);
+    ctx.font = '600 10px system-ui, sans-serif';
+    ctx.fillStyle = hexAlpha(perk.color, 0.8);
+    ctx.fillText(`${perk.name} ${perk.price} $`, m.x + (m.x < 800 ? 40 : -40), m.y + half + 16);
+  }
+}
+
+// Tehosteet sykkivät lattialla ja vilkkuvat ennen katoamista.
+function drawPowerups(ctx, powerups, t) {
+  for (const pu of powerups) {
+    if (pu.life < 4 && Math.floor(t * 6) % 2 === 0) continue;
+    const def = POWERUPS[pu.type];
+    if (!def) continue;
+    const r = 14 + 2 * Math.sin(t * 5 + pu.id);
+    const glow = ctx.createRadialGradient(pu.x, pu.y, 0, pu.x, pu.y, 45);
+    glow.addColorStop(0, hexAlpha(def.color, 0.5));
+    glow.addColorStop(1, hexAlpha(def.color, 0));
+    ctx.fillStyle = glow;
+    ctx.fillRect(pu.x - 45, pu.y - 45, 90, 90);
+    ctx.beginPath();
+    ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = def.color;
+    ctx.font = '800 13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(def.short, pu.x, pu.y + 5);
+  }
+}
+
+function hexAlpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+
 // Lamput värisevät ja sammuvat välillä hetkeksi.
 function lampLevel(i, t) {
   const blink = hash(Math.floor(t * 10) * 7 + i * 131);
@@ -751,6 +828,11 @@ function drawHud(ctx, world, localId, w, h, dt) {
     drawVignette(ctx, w, h, `rgba(200, 20, 20, ${hurtFlash * 0.45})`);
     hurtFlash = Math.max(0, hurtFlash - dt * 2.5);
   }
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${flash * 0.8})`;
+    ctx.fillRect(0, 0, w, h);
+    flash = Math.max(0, flash - dt * 1.2);
+  }
 
   // Kierroslaskuri ja oma HP vasemmassa alakulmassa
   if (inMatch && world.round > 0) {
@@ -774,13 +856,71 @@ function drawHud(ctx, world, localId, w, h, dt) {
   if (me?.alive) {
     drawLoadout(ctx, me, w, h);
     drawPrompt(ctx, world, me, w, h);
+    drawPerksAndDash(ctx, me, h);
+    drawActiveEffects(ctx, me, w);
   }
+  drawAnnouncement(ctx, w, h);
 
   // Ohje alhaalla keskellä
   ctx.font = '500 12px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#4a5162';
-  ctx.fillText('WASD liiku · hiiri ampuu · R lataa · Q / rulla vaihtaa asetta · E osta', w / 2, h - 12);
+  ctx.fillText('WASD liiku · hiiri ampuu · Shift / oikea nappi väistää · R lataa · Q / rulla vaihtaa · E osta', w / 2, h - 12);
+}
+
+// Juodut juomat HP:n vieressä ja väistön latautuminen sen alla.
+function drawPerksAndDash(ctx, me, h) {
+  let x = 140;
+  for (const id of PERK_IDS) {
+    if (!me.perks?.[id]) continue;
+    const perk = PERKS[id];
+    ctx.beginPath();
+    ctx.arc(x, h - 32, 11, 0, Math.PI * 2);
+    ctx.fillStyle = '#111';
+    ctx.fill();
+    ctx.strokeStyle = perk.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = perk.color;
+    ctx.font = '800 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(perk.short, x, h - 28);
+    x += 28;
+  }
+
+  const ready = (me.dashCd ?? 0) <= 0;
+  const frac = ready ? 1 : 1 - me.dashCd / DASH_COOLDOWN_TICKS;
+  ctx.fillStyle = '#00000088';
+  ctx.fillRect(22, h - 14, 90, 4);
+  ctx.fillStyle = ready ? '#e6e9ef' : '#5c6476';
+  ctx.fillRect(22, h - 14, 90 * frac, 4);
+}
+
+function drawActiveEffects(ctx, me, w) {
+  const parts = [];
+  if (me.instaKill > 0) parts.push([`${POWERUPS.insta.name} ${Math.ceil(me.instaKill)} s`, POWERUPS.insta.color]);
+  if (me.doubleMoney > 0) parts.push([`${POWERUPS.double.name} ${Math.ceil(me.doubleMoney)} s`, POWERUPS.double.color]);
+  ctx.font = '700 16px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  parts.forEach(([text, color], i) => {
+    ctx.fillStyle = color;
+    ctx.fillText(text, w / 2, 122 + i * 22);
+  });
+}
+
+function drawAnnouncement(ctx, w, h) {
+  if (!announcement) return;
+  const age = (performance.now() - announcement.time) / 1000;
+  if (age > 2) {
+    announcement = null;
+    return;
+  }
+  ctx.globalAlpha = Math.min(1, 2 - age);
+  ctx.textAlign = 'center';
+  ctx.font = announcement.small ? '600 18px system-ui, sans-serif' : '44px Creepster, Impact, sans-serif';
+  ctx.fillStyle = announcement.color;
+  ctx.fillText(announcement.text, w / 2, h * 0.3);
+  ctx.globalAlpha = 1;
 }
 
 // Oikea alakulma: raha, ase ja ammukset.
@@ -819,7 +959,7 @@ function drawLoadout(ctx, me, w, h) {
   ctx.fillText(`${mag} / ${reserveText}`, right, h - 34);
 
   if (me.reloadTimer > 0) {
-    const frac = 1 - me.reloadTimer / weapon.reload;
+    const frac = 1 - me.reloadTimer / (weapon.reload * (me.perks?.reload ? RELOAD_PERK_MUL : 1));
     ctx.fillStyle = '#00000088';
     ctx.fillRect(right - 140, h - 26, 140, 5);
     ctx.fillStyle = '#e6e9ef';

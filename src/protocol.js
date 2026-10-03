@@ -7,12 +7,15 @@
 //                    { type: 'pong', c }
 //                    { type: 'reject', reason }
 
-export const PEER_PREFIX = 'areena-peli-v3-';
+import { PERK_IDS } from './weapons.js';
+
+export const PEER_PREFIX = 'areena-peli-v4-';
 export const MAX_PLAYERS = 6;
 export const SNAPSHOT_EVERY = 2; // tickiä -> 30 snapshotia/s
 
 const r1 = (v) => Math.round(v * 10) / 10;
 const r2 = (v) => Math.round(v * 100) / 100;
+const r3 = (v) => Math.round(v * 1000) / 1000;
 
 export function encodeSnapshot(world, acks, events) {
   const z = world.zone;
@@ -32,6 +35,7 @@ export function encodeSnapshot(world, acks, events) {
     ]),
     b: world.bullets.map((b) => [b.id, r1(b.x), r1(b.y), b.splash ? 1 : 0]),
     bx: [world.box.state, world.box.owner, world.box.weapon, r1(world.box.timer)],
+    pu: world.powerups.map((pu) => [pu.id, pu.type, r1(pu.x), r1(pu.y), r1(pu.life)]),
     zb: world.zombies.map((z) => [z.id, r1(z.x), r1(z.y), r2(z.angle), z.emerge > 0 ? 1 : 0]),
     e: events.map((e) => ({ ...e, x: r1(e.x ?? 0), y: r1(e.y ?? 0) })),
   };
@@ -61,23 +65,34 @@ export function decodeSnapshot(msg) {
     box: Array.isArray(msg.bx)
       ? { state: msg.bx[0], owner: msg.bx[1], weapon: msg.bx[2], timer: msg.bx[3] }
       : { state: 'idle', owner: null, weapon: null, timer: 0 },
+    powerups: (Array.isArray(msg.pu) ? msg.pu : []).map((a) => ({ id: a[0], type: a[1], x: a[2], y: a[3], life: a[4] })),
   };
 }
 
-// Raha ja aseet: [raha, ase1, ase2, valittu, lipas, varasto (-1 = rajaton), latauksen jäljellä oleva aika]
+// Raha ja aseet: [raha, ase1, ase2, valittu, lipas, varasto (-1 = rajaton), latausaika,
+//   juomat (bitit), kertaisku, tuplarahat, väistö: tickit, latautuminen, nappi pohjassa, suunta x, y]
 function encodeLoadout(p) {
   const slot = p.slots[p.cur];
+  const perkBits = PERK_IDS.reduce((bits, id, i) => (p.perks?.[id] ? bits | (1 << i) : bits), 0);
   return [
     p.money, p.slots[0]?.id ?? null, p.slots[1]?.id ?? null, p.cur,
     slot ? slot.mag : 0, slot && Number.isFinite(slot.reserve) ? slot.reserve : -1, r1(p.reloadTimer),
+    perkBits, r1(p.instaKill), r1(p.doubleMoney),
+    p.dashTicks, p.dashCd, p.dashHeld ? 1 : 0, r3(p.dashX), r3(p.dashY),
   ];
 }
 
 function decodeLoadout(a, i) {
   const slots = [a[i + 1] ? { id: a[i + 1] } : null, a[i + 2] ? { id: a[i + 2] } : null];
+  const perks = {};
+  PERK_IDS.forEach((id, k) => {
+    if (a[i + 7] & (1 << k)) perks[id] = true;
+  });
   return {
     money: a[i], slots, cur: a[i + 3], mag: a[i + 4],
     reserve: a[i + 5] < 0 ? Infinity : a[i + 5], reloadTimer: a[i + 6],
+    perks, instaKill: a[i + 8], doubleMoney: a[i + 9],
+    dashTicks: a[i + 10], dashCd: a[i + 11], dashHeld: a[i + 12] === 1, dashX: a[i + 13], dashY: a[i + 14],
   };
 }
 
@@ -99,6 +114,7 @@ export function sanitizeInput(i) {
     reload: !!i.reload,
     interact: !!i.interact,
     swap: !!i.swap,
+    dash: !!i.dash,
   };
 }
 

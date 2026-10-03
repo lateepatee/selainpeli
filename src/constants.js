@@ -16,6 +16,11 @@ export const PLAYER_SPEED = 220;     // px/s
 export const PLAYER_HP = 100;
 export const RESPAWN_TIME = 3;       // s
 
+// Väistö. Tickeinä (ei sekunteina), jotta liittyjän ennuste laskee täsmälleen samoin kuin host.
+export const DASH_SPEED = 760;       // px/s väistön aikana
+export const DASH_TICKS = 10;        // kesto
+export const DASH_COOLDOWN_TICKS = 180; // 3 s
+
 // Ammusten nopeus, vahinko ja tulinopeus ovat asekohtaisia: weapons.js.
 export const BULLET_RADIUS = 4;
 
@@ -86,6 +91,10 @@ export const OBSTACLES = [
   { x: 760, y: 820, w: 80, h: 50, crate: true },
   // Arpalaatikko keskushuoneessa (sama paikka kuin weapons.js BOX)
   { x: 768, y: 485, w: 64, h: 30, box: true },
+  // Juoma-automaatit kulmissa (samat paikat kuin weapons.js PERK_MACHINES)
+  { x: 40, y: 60, w: 40, h: 40, machine: true },
+  { x: 1520, y: 60, w: 40, h: 40, machine: true },
+  { x: 40, y: 900, w: 40, h: 40, machine: true },
 ];
 
 // Laudoitetut ikkunat ulkoseinissä: zombit kiipeävät näistä sisään.

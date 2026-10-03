@@ -4,6 +4,7 @@ import { TICK, PLAYER_COLORS } from './constants.js';
 import { createWorld, addPlayer, removePlayer, step, startMatch, EMPTY_INPUT } from './game.js';
 import { readInput } from './input.js';
 import { botInput, forgetBot } from './bot.js';
+import { playEvents, updateAmbient } from './sound.js';
 import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
 import {
   PEER_PREFIX, MAX_PLAYERS, SNAPSHOT_EVERY,
@@ -151,6 +152,7 @@ export function startHost({ name, bots, onRoom, onStatus }) {
 
     const events = step(world, inputs, TICK);
     handleEvents(events, world, HOST_ID);
+    playEvents(events, HOST_ID);
     pendingEvents.push(...events);
 
     if (++tick % SNAPSHOT_EVERY === 0) broadcast();
@@ -188,6 +190,7 @@ export function startHost({ name, bots, onRoom, onStatus }) {
       const target = cameraTarget(world, HOST_ID);
       if (target) followCamera(target, dt);
       render(ctx, world, HOST_ID, acc / TICK, dt);
+      updateAmbient(world, dt);
     },
     info() {
       const humans = clients.size + 1;

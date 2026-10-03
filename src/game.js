@@ -10,7 +10,7 @@
 
 import {
   ARENA_W, ARENA_H, OBSTACLES,
-  PLAYER_RADIUS, PLAYER_SPEED, PLAYER_HP, RESPAWN_TIME,
+  PLAYER_RADIUS, PLAYER_SPEED, PLAYER_HP, RESPAWN_TIME, DASH_SPEED, DASH_TICKS, DASH_COOLDOWN_TICKS,
   BULLET_RADIUS,
   TARGET_SCORE, WIN_POINTS, KILL_POINTS, COUNTDOWN_TIME, ROUND_END_TIME, GAME_OVER_TIME,
   ZONE_DELAY, ZONE_SHRINK_TIME, ZONE_MIN_R, ZONE_DPS, ZONE_DPS_FINAL, ZOMBIE_RADIUS,
@@ -20,11 +20,14 @@ import { stepZombies } from './zombies.js';
 import {
   WEAPONS, START_MONEY, MONEY_ZOMBIE_HIT, MONEY_ZOMBIE_KILL, MONEY_PLAYER_KILL, SWAP_TIME,
   BOX_PRICE, BOX_SPIN_TIME, BOX_TAKE_TIME, findInteractable, rollBoxWeapon,
+  ARMOR_HP, RELOAD_PERK_MUL, RAPID_PERK_MUL,
+  POWERUPS, POWERUP_IDS, POWERUP_DROP_CHANCE, POWERUP_LIFE, POWERUP_PICKUP_RANGE,
+  POWERUP_MAX_ON_FLOOR, POWERUP_WEIGHTS,
 } from './weapons.js';
 
 export const EMPTY_INPUT = {
   up: false, down: false, left: false, right: false, aim: 0, shoot: false,
-  reload: false, interact: false, swap: false,
+  reload: false, interact: false, swap: false, dash: false,
 };
 
 export function createWorld() {
@@ -44,6 +47,8 @@ export function createWorld() {
     zombieTimer: 0,
     flowAt: 0,            // milloin zombien reitit lasketaan seuraavaksi
     box: idleBox(),
+    powerups: [],         // { id, type, x, y, life }
+    nextPowerupId: 1,
   };
 }
 
@@ -76,6 +81,14 @@ export function addPlayer(world, id, name, color) {
     cur: 0,
     reloadTimer: 0,
     prev: { reload: false, interact: false, swap: false }, // napin painallus = reuna
+    perks: {},             // juodut juomat: { armor: true, ... }
+    instaKill: 0,          // tehosteiden jäljellä oleva aika (s)
+    doubleMoney: 0,
+    dashTicks: 0,          // väistöä jäljellä (tickejä)
+    dashCd: 0,             // väistön latautuminen (tickejä)
+    dashHeld: false,
+    dashX: 0,
+    dashY: 0,
   };
   world.players[id] = p;
   spawn(world, p);
@@ -110,6 +123,7 @@ function startRound(world) {
   world.zombies = [];
   world.zombieTimer = 2;
   world.box = idleBox();
+  world.powerups = [];
   world.roundWinner = null;
   world.zone = createZone();
   world.phase = 'countdown';
@@ -167,13 +181,17 @@ export function step(world, inputs, dt) {
     if (!acting) continue;
 
     movePlayer(p, input, dt);
+    if (p.dashCd === DASH_COOLDOWN_TICKS) events.push({ type: 'dash', x: p.x, y: p.y, by: p.id });
+    p.instaKill = Math.max(0, p.instaKill - dt);
+    p.doubleMoney = Math.max(0, p.doubleMoney - dt);
     if (swap) swapWeapon(p);
-    if (reload) startReload(p);
+    if (reload) startReload(p, events);
     if (interactNow) interact(world, p, events);
-    updateWeapon(world, p, input, dt);
+    updateWeapon(world, p, input, dt, events);
   }
 
   stepBox(world, dt);
+  stepPowerups(world, dt, events);
 
   stepZombies(world, dt, events, (p, amount, ev) => damagePlayer(world, p, amount, null, 'zombie', ev));
   stepBullets(world, dt, events);
@@ -205,6 +223,7 @@ function toWarmup(world) {
   world.bullets = [];
   world.zombies = [];
   world.box = idleBox();
+  world.powerups = [];
   for (const p of Object.values(world.players)) {
     if (!p.alive) spawn(world, p);
   }
@@ -257,8 +276,30 @@ export function movePlayer(p, input, dt) {
     dx *= Math.SQRT1_2;
     dy *= Math.SQRT1_2;
   }
-  p.x += dx * PLAYER_SPEED * dt;
-  p.y += dy * PLAYER_SPEED * dt;
+
+  // Väistö: lyhyt syöksy liikesuuntaan (tai tähtäyssuuntaan paikallaan).
+  p.dashCd = Math.max(0, (p.dashCd || 0) - 1);
+  if (input.dash && !p.dashHeld && p.dashCd === 0) {
+    if (dx === 0 && dy === 0) {
+      dx = Math.cos(input.aim);
+      dy = Math.sin(input.aim);
+    }
+    p.dashX = dx;
+    p.dashY = dy;
+    p.dashTicks = DASH_TICKS;
+    p.dashCd = DASH_COOLDOWN_TICKS;
+  }
+  p.dashHeld = !!input.dash;
+  let speed = PLAYER_SPEED;
+  if (p.dashTicks > 0) {
+    dx = p.dashX;
+    dy = p.dashY;
+    speed = DASH_SPEED;
+    p.dashTicks--;
+  }
+
+  p.x += dx * speed * dt;
+  p.y += dy * speed * dt;
 
   for (const r of OBSTACLES) pushCircleOutOfRect(p, PLAYER_RADIUS, r);
   p.x = clamp(p.x, PLAYER_RADIUS, ARENA_W - PLAYER_RADIUS);
@@ -287,14 +328,15 @@ function swapWeapon(p) {
   p.cooldown = Math.max(p.cooldown, SWAP_TIME);
 }
 
-function startReload(p) {
+function startReload(p, events) {
   const slot = p.slots[p.cur];
   const w = WEAPONS[slot.id];
   if (p.reloadTimer > 0 || slot.mag >= w.mag || slot.reserve <= 0) return;
-  p.reloadTimer = w.reload;
+  p.reloadTimer = w.reload * (p.perks.reload ? RELOAD_PERK_MUL : 1);
+  events.push({ type: 'reload', x: p.x, y: p.y, by: p.id });
 }
 
-function updateWeapon(world, p, input, dt) {
+function updateWeapon(world, p, input, dt, events) {
   p.cooldown -= dt;
   const slot = p.slots[p.cur];
   const w = WEAPONS[slot.id];
@@ -310,20 +352,21 @@ function updateWeapon(world, p, input, dt) {
     return;
   }
   if (slot.mag <= 0) {
-    startReload(p);
+    startReload(p, events);
     return;
   }
   if (input.shoot && p.cooldown <= 0) {
-    p.cooldown = w.cooldown;
+    p.cooldown = w.cooldown * (p.perks.rapid ? RAPID_PERK_MUL : 1);
     slot.mag--;
-    fire(world, p, w);
+    fire(world, p, w, slot.id, events);
   }
 }
 
-function fire(world, p, w) {
+function fire(world, p, w, weaponId, events) {
   const muzzle = PLAYER_RADIUS + 6;
   const x = p.x + Math.cos(p.aim) * muzzle;
   const y = p.y + Math.sin(p.aim) * muzzle;
+  events.push({ type: 'shot', x, y, w: weaponId, by: p.id });
   for (let i = 0; i < w.pellets; i++) {
     const a = p.aim + (Math.random() - 0.5) * 2 * w.spread;
     world.bullets.push({
@@ -358,6 +401,11 @@ function interact(world, p, events) {
     slot.mag = w.mag;
     slot.reserve = w.reserve;
     events.push({ type: 'buy', id: p.id });
+  } else if (it.kind === 'perk') {
+    p.money -= it.price;
+    p.perks[it.perk] = true;
+    if (it.perk === 'armor') p.hp += ARMOR_HP - PLAYER_HP;
+    events.push({ type: 'perk', by: p.id, perk: it.perk, x: p.x, y: p.y });
   } else if (it.kind === 'box') {
     p.money -= BOX_PRICE;
     world.box = { state: 'spinning', timer: BOX_SPIN_TIME, owner: p.id, weapon: rollBoxWeapon(p) };
@@ -452,14 +500,62 @@ function explodeIfSplash(world, b, events) {
 
 function damageZombie(world, z, amount, ownerId, events) {
   const shooter = world.players[ownerId];
+  if (shooter?.instaKill > 0) amount = Math.max(amount, z.hp);
   z.hp -= amount;
-  if (shooter) shooter.money += MONEY_ZOMBIE_HIT;
+  if (shooter) addMoney(shooter, MONEY_ZOMBIE_HIT);
   if (z.hp <= 0) {
     if (shooter) {
       shooter.zombieKills++;
-      shooter.money += MONEY_ZOMBIE_KILL;
+      addMoney(shooter, MONEY_ZOMBIE_KILL);
     }
     events.push({ type: 'zkill', x: z.x, y: z.y, by: ownerId });
+    if (Math.random() < POWERUP_DROP_CHANCE) dropPowerup(world, z.x, z.y);
+  }
+}
+
+function addMoney(p, amount) {
+  p.money += p.doubleMoney > 0 ? amount * 2 : amount;
+}
+
+// --- Tehosteet ---
+
+function dropPowerup(world, x, y) {
+  if (world.powerups.length >= POWERUP_MAX_ON_FLOOR) return;
+  const total = POWERUP_IDS.reduce((sum, id) => sum + POWERUP_WEIGHTS[id], 0);
+  let r = Math.random() * total;
+  const type = POWERUP_IDS.find((id) => (r -= POWERUP_WEIGHTS[id]) <= 0) || POWERUP_IDS[0];
+  world.powerups.push({ id: world.nextPowerupId++, type, x, y, life: POWERUP_LIFE });
+}
+
+function stepPowerups(world, dt, events) {
+  const players = Object.values(world.players).filter((p) => p.alive);
+  world.powerups = world.powerups.filter((pu) => {
+    pu.life -= dt;
+    if (pu.life <= 0) return false;
+    const p = players.find((pl) => Math.hypot(pl.x - pu.x, pl.y - pu.y) < POWERUP_PICKUP_RANGE);
+    if (!p) return true;
+    applyPowerup(world, p, pu.type, events);
+    events.push({ type: 'pickup', kind: pu.type, by: p.id, x: pu.x, y: pu.y });
+    return false;
+  });
+}
+
+function applyPowerup(world, p, type, events) {
+  const def = POWERUPS[type];
+  if (type === 'ammo') {
+    for (const slot of p.slots) {
+      if (!slot) continue;
+      slot.mag = WEAPONS[slot.id].mag;
+      slot.reserve = WEAPONS[slot.id].reserve;
+    }
+  } else if (type === 'insta') {
+    p.instaKill = def.duration;
+  } else if (type === 'double') {
+    p.doubleMoney = def.duration;
+  } else if (type === 'nuke') {
+    world.zombies = [];
+    addMoney(p, def.money);
+    events.push({ type: 'nuke', by: p.id });
   }
 }
 
@@ -479,7 +575,7 @@ function kill(world, victim, killerId, cause, events) {
   const killer = killerId && world.players[killerId];
   if (killer) {
     killer.kills++;
-    killer.money += MONEY_PLAYER_KILL;
+    addMoney(killer, MONEY_PLAYER_KILL);
     if (world.phase === 'playing') killer.score += KILL_POINTS;
   }
   events.push({ type: 'kill', x: victim.x, y: victim.y, victim: victim.id, killer: killerId, cause });
@@ -511,6 +607,11 @@ function spawn(world, p, keepMoney = false) {
   p.respawnTimer = 0;
   // Joka syntymässä aloitetaan pistoolilla. Raha nollautuu paitsi erien välillä.
   if (!keepMoney) p.money = START_MONEY;
+  p.perks = {};
+  p.instaKill = 0;
+  p.doubleMoney = 0;
+  p.dashTicks = 0;
+  p.dashCd = 0;
   p.slots = [{ id: 'pistol', mag: WEAPONS.pistol.mag, reserve: WEAPONS.pistol.reserve }, null];
   p.cur = 0;
   p.reloadTimer = 0;

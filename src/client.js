@@ -7,6 +7,7 @@ import { movePlayer, canAct } from './game.js';
 import { readInput } from './input.js';
 import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
 import { PEER_PREFIX, decodeSnapshot } from './protocol.js';
+import { playEvents, updateAmbient } from './sound.js';
 
 const INTERP_DELAY = 0.1;     // s
 const CONNECT_TIMEOUT = 10000; // ms
@@ -112,7 +113,10 @@ export function startClient({ name, code, onReady, onFail }) {
       return;
     }
     const prev = predicted;
-    predicted = { x: self.x, y: self.y, px: 0, py: 0 };
+    predicted = {
+      x: self.x, y: self.y, px: 0, py: 0,
+      dashTicks: self.dashTicks, dashCd: self.dashCd, dashHeld: self.dashHeld, dashX: self.dashX, dashY: self.dashY,
+    };
     for (const input of pending) {
       if (input.move) movePlayer(predicted, input, TICK);
     }
@@ -211,6 +215,7 @@ export function startClient({ name, code, onReady, onFail }) {
       phase: latest.phase, phaseTimer: latest.phaseTimer, round: latest.round,
       roundWinner: latest.roundWinner, matchWinner: latest.matchWinner, zone: latest.zone,
       box: latest.box,
+      powerups: latest.powerups,
     };
     return { view, due };
   }
@@ -232,9 +237,11 @@ export function startClient({ name, code, onReady, onFail }) {
       }
       const { view, due } = buildView(acc / TICK);
       handleEvents(due, view, localId);
+      playEvents(due, localId);
       const target = cameraTarget(view, localId);
       if (target) followCamera(target, dt);
       render(ctx, view, localId, 1, dt);
+      updateAmbient(view, dt);
     },
     info() {
       const ping = rtt === null ? '–' : `${Math.round(rtt)} ms`;
