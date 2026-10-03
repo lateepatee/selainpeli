@@ -31,7 +31,7 @@ export const ROUND_END_TIME = 4;     // s erän tuloksen näyttö
 export const GAME_OVER_TIME = 10;    // s lopputuloksen näyttö, sitten lämmittelyyn
 
 // Kutistuva alue
-export const ZONE_DELAY = 20;        // s ennen kuin alue alkaa kutistua
+export const ZONE_DELAY = 10;        // s ennen kuin alue alkaa kutistua
 export const ZONE_SHRINK_TIME = 60;  // s täydestä pienimpään
 export const ZONE_MIN_R = 110;
 export const ZONE_DPS = 8;           // vahinko/s alueen ulkopuolella
