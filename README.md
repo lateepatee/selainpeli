@@ -44,13 +44,13 @@ python -m http.server 8000
 
 Avaa sitten http://localhost:8000. Kaksi selainikkunaa riittää moninpelin kokeilemiseen.
 
-Kun verkkoviestit muuttuvat, nosta versio `PEER_PREFIX` tiedostossa `src/protocol.js` ja aja ennen julkaisua:
+Aja ennen jokaista committia:
 
 ```sh
 python tools/versio.py
 ```
 
-Skripti versioi moduulien osoitteet `index.html`:ssä, jotta selaimen välimuisti ei sekoita vanhaa ja uutta versiota.
+Skripti lisää jokaisen moduulin osoitteeseen sen sisällöstä lasketun tiivisteen (`index.html`), jotta selaimen välimuisti ei sekoita vanhaa ja uutta versiota. Kun verkkoviestien muoto muuttuu, nosta lisäksi `PEER_PREFIX` tiedostossa `src/protocol.js`, jotta eri versioiden pelaajat eivät päädy samaan huoneeseen.
 
 ## Tekniikka
 
