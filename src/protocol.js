@@ -12,7 +12,7 @@
 
 import { PERK_IDS } from './weapons.js';
 
-export const PEER_PREFIX = 'areena-peli-v6-';
+export const PEER_PREFIX = 'areena-peli-v8-';
 export const MAX_PLAYERS = 6;
 export const SNAPSHOT_EVERY = 2; // tickiä -> 30 snapshotia/s
 
@@ -29,6 +29,7 @@ export function encodeSnapshot(world, acks, events) {
     ph: world.phase,
     pt: r1(world.phaseTimer),
     rd: world.round,
+    ts: world.targetScore,
     rw: world.roundWinner,
     mw: world.matchWinner,
     z: z ? [r1(z.x), r1(z.y), r1(z.r), r1(z.elapsed)] : null,
@@ -42,6 +43,10 @@ export function encodeSnapshot(world, acks, events) {
     bx: [world.box.state, world.box.owner, world.box.weapon, r1(world.box.timer)],
     pu: world.powerups.map((pu) => [pu.id, pu.type, r1(pu.x), r1(pu.y), r1(pu.life)]),
     zb: world.zombies.map((z) => [z.id, r1(z.x), r1(z.y), r2(z.angle), z.emerge > 0 ? 1 : 0]),
+    bs: world.boss ? [
+      r1(world.boss.x), r1(world.boss.y), r2(world.boss.angle), Math.ceil(world.boss.hp), world.boss.maxHp,
+      world.boss.state, r2(world.boss.timer), r1(world.boss.tx), r1(world.boss.ty), world.boss.enraged ? 1 : 0,
+    ] : null,
     e: events.map((e) => ({ ...e, x: r1(e.x ?? 0), y: r1(e.y ?? 0) })),
   };
 }
@@ -67,12 +72,16 @@ export function decodeSnapshot(msg) {
   return {
     t: msg.t, players, bullets, zombies, events: msg.e,
     mapId: typeof msg.m === 'string' ? msg.m : null,
-    phase: msg.ph, phaseTimer: msg.pt, round: msg.rd,
+    phase: msg.ph, phaseTimer: msg.pt, round: msg.rd, targetScore: msg.ts,
     roundWinner: msg.rw, matchWinner: msg.mw, zone: z,
     box: Array.isArray(msg.bx)
       ? { state: msg.bx[0], owner: msg.bx[1], weapon: msg.bx[2], timer: msg.bx[3] }
       : { state: 'idle', owner: null, weapon: null, timer: 0 },
     powerups: (Array.isArray(msg.pu) ? msg.pu : []).map((a) => ({ id: a[0], type: a[1], x: a[2], y: a[3], life: a[4] })),
+    boss: Array.isArray(msg.bs) ? {
+      x: msg.bs[0], y: msg.bs[1], angle: msg.bs[2], hp: msg.bs[3], maxHp: msg.bs[4],
+      state: msg.bs[5], timer: msg.bs[6], tx: msg.bs[7], ty: msg.bs[8], enraged: msg.bs[9] === 1,
+    } : null,
   };
 }
 

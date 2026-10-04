@@ -67,8 +67,8 @@ function computeFlow(players) {
   }
 }
 
-// Suunta naapuriruutuun, joka on lähimpänä pelaajaa. null jos ei reittiä.
-function flowDirection(z) {
+// Suunta naapuriruutuun, joka on lähimpänä pelaajaa. null jos ei reittiä. (Myös bossi käyttää.)
+export function flowDirection(z) {
   const i = cellOf(z.x, z.y);
   const c = i % COLS;
   const r = (i - c) / COLS;
@@ -106,7 +106,8 @@ export function zombieLevel(world) {
   return Math.floor(elapsed / ZOMBIE_LEVEL_TIME) + Math.floor((world.round - 1) / 2);
 }
 
-function spawnZombie(world, alive, level) {
+// Myös Lyhtymies kutsuu zombeja (boss.js).
+export function spawnZombie(world, alive, level) {
   // Ei ikkunasta, jonka vieressä joku seisoo: ei epäreiluja selkään syntymisiä.
   const far = WINDOWS.filter((w) => alive.every((p) => Math.hypot(p.x - w.x, p.y - w.y) > 220));
   const list = far.length > 0 ? far : WINDOWS;

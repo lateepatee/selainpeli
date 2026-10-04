@@ -10,6 +10,7 @@ import { onMapChange, MAP_THEME, MAP_NAME } from './map.js';
 import { drawChat } from './chat.js';
 import { drawCharacter } from './appearance.js';
 import { AURA_RADIUS, FLASHLIGHT_RANGE, FLASHLIGHT_HALF_ANGLE, isLitFor } from './vision.js';
+import { BOSS_NAME, BOSS_NAME_OBJECT, BOSS_RADIUS } from './boss.js';
 import {
   WEAPONS, WALL_BUYS, BOX, findInteractable,
   PERKS, PERK_IDS, PERK_MACHINES, MACHINE_SIZE, RELOAD_PERK_MUL, maxHpOf, POWERUPS,
@@ -24,11 +25,14 @@ const BLOOD = '#6b0f12';
 const ROUND_RED = '#b3121b';
 
 const MONEY_COLOR = '#ffd54f';
+const LANTERN_COLOR = '#ffb74d';
+const RAGE_COLOR = '#ff3d2e';
 const WONDER_COLOR = '#76ff03';
 const particles = [];
 const moneyPopups = [];       // { amount, time }
 let announcement = null;      // { text, color, time } iso ilmoitus ruudun yläosaan
 let flash = 0;                // ydinpommin valkoinen välähdys
+let shake = 0;                // ruudun tärähdys (bossin laskeutuminen)
 const killFeed = [];
 const decals = [];            // verijäljet lattiassa
 let hurtFlash = 0;
@@ -108,6 +112,28 @@ export function handleEvents(events, world, localId) {
       flash = 1;
     } else if (e.type === 'perk' && e.by === localId) {
       announce(PERKS[e.perk].name, PERKS[e.perk].color);
+    } else if (e.type === 'bossSpawn') {
+      announce('Jokin heräsi… Aselepo!', LANTERN_COLOR);
+    } else if (e.type === 'bossRage') {
+      announce('Lyhtymies raivostuu!', RAGE_COLOR);
+      burst(e.x, e.y, RAGE_COLOR, 40, 300);
+    } else if (e.type === 'bosshurt') {
+      burst(e.x, e.y, '#3a2f45', 5, 120);
+    } else if (e.type === 'deflect') {
+      burst(e.x, e.y, '#ffffff', 6, 220);
+    } else if (e.type === 'bossLand') {
+      burst(e.x, e.y, '#8d6e63', 30, 260);
+      if (world.players[localId]?.alive && Math.hypot(world.players[localId].x - e.x, world.players[localId].y - e.y) < 400) shake = 0.5;
+    } else if (e.type === 'bossCounter') {
+      burst(e.x, e.y, LANTERN_COLOR, 36, 320);
+    } else if (e.type === 'bossHit') {
+      burst(e.x, e.y, '#c62828', e.heavy ? 18 : 10, e.heavy ? 220 : 160);
+      if (e.target === localId) hurtFlash = 1;
+    } else if (e.type === 'bossKill') {
+      burst(e.x, e.y, LANTERN_COLOR, 60, 380);
+      burst(e.x, e.y, '#2b2433', 40, 260);
+      const killer = world.players[e.by];
+      announce(killer ? `${killer.name} kaatoi ${BOSS_NAME_OBJECT}! Aselepo päättyi` : `${BOSS_NAME} kaatui!`, killer?.color || LANTERN_COLOR);
     } else if (e.type === 'blast') {
       burst(e.x, e.y, WONDER_COLOR, 24, 260);
     } else if (e.type === 'zattack') {
@@ -180,6 +206,7 @@ export function render(ctx, world, localId, alpha, dt) {
     ctx.fill();
   }
   for (const z of world.zombies || []) drawZombie(ctx, z, alpha);
+  if (world.boss) drawBoss(ctx, world.boss, alpha, now);
   for (const p of Object.values(world.players)) {
     if (p.alive) drawPlayer(ctx, p, alpha, p.id === localId);
   }
@@ -212,6 +239,7 @@ export function render(ctx, world, localId, alpha, dt) {
     if (seen) drawPlayerLabel(ctx, p, alpha);
   }
   if (viewer) drawZombieEyes(ctx, world.zombies || [], viewer, alpha);
+  if (world.boss) drawBossOverlay(ctx, world.boss, viewer, alpha, now);
   ctx.restore();
 
   // --- HUD ---
@@ -219,7 +247,8 @@ export function render(ctx, world, localId, alpha, dt) {
 }
 
 function applyCamera(ctx, w, h) {
-  ctx.translate(w / 2, h / 2);
+  const s = shake * 10;
+  ctx.translate(w / 2 + (Math.random() - 0.5) * s, h / 2 + (Math.random() - 0.5) * s);
   ctx.scale(camera.zoom, camera.zoom);
   ctx.translate(-camera.x, -camera.y);
 }
@@ -631,6 +660,144 @@ function drawZombie(ctx, z, alpha) {
   ctx.restore();
 }
 
+// --- Lyhtymies ---
+
+function bossPos(b, alpha) {
+  return { x: lerp(b.px ?? b.x, b.x, alpha), y: lerp(b.py ?? b.y, b.y, alpha) };
+}
+
+// Lyhty sauvan päässä, katseen suunnasta hieman oikealle.
+function lanternPos(b, alpha) {
+  const p = bossPos(b, alpha);
+  const a = b.angle + 0.55;
+  return { x: p.x + Math.cos(a) * (BOSS_RADIUS + 16), y: p.y + Math.sin(a) * (BOSS_RADIUS + 16) };
+}
+
+// Hypyn aikana hahmo "nousee": varjo jää maahan ja hahmo suurenee lennon puolivälissä.
+function leapLift(b) {
+  if (b.state !== 'leap') return 0;
+  const t = 1 - Math.max(0, b.timer) / 0.35;
+  return Math.sin(Math.PI * Math.min(1, Math.max(0, t)));
+}
+
+function drawBoss(ctx, b, alpha, t) {
+  const { x, y } = bossPos(b, alpha);
+  const lift = leapLift(b);
+  const r = BOSS_RADIUS;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 4, r * (1 - lift * 0.3), r * 0.8 * (1 - lift * 0.3), 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(x, y - lift * 18);
+  ctx.scale(1 + lift * 0.35, 1 + lift * 0.35);
+  ctx.rotate(b.angle);
+  if (b.state === 'emerge') ctx.globalAlpha = 0.6;
+
+  // Sauva
+  ctx.strokeStyle = '#5d4a3a';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.6, r * 0.2);
+  ctx.lineTo(Math.cos(0.55) * (r + 16), Math.sin(0.55) * (r + 16));
+  ctx.stroke();
+
+  // Kaapu ja hartiat
+  ctx.fillStyle = '#2b2433';
+  ctx.beginPath();
+  ctx.ellipse(-2, 0, r * 0.95, r, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#120f16';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Huppu
+  ctx.fillStyle = '#1a1520';
+  ctx.beginPath();
+  ctx.arc(2, 0, r * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  // Lyhty (punainen raivossa)
+  ctx.fillStyle = b.enraged ? RAGE_COLOR : LANTERN_COLOR;
+  ctx.beginPath();
+  ctx.arc(Math.cos(0.55) * (r + 16), Math.sin(0.55) * (r + 16), 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Varoitukset ja hehkut pimeyden päälle.
+function drawBossOverlay(ctx, b, viewer, alpha, t) {
+  // Hypyn kohde näkyy aina, jotta ehtii väistää.
+  if (b.state === 'leapWind' || b.state === 'leap') {
+    const pulse = 0.5 + 0.3 * Math.sin(t * 18);
+    ctx.fillStyle = `rgba(255, 40, 30, ${0.18 + pulse * 0.15})`;
+    ctx.beginPath();
+    ctx.arc(b.tx, b.ty, 75, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255, 60, 40, ${pulse + 0.2})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  const { x, y } = bossPos(b, alpha);
+  const visible = !viewer || lineOfSight(viewer.x, viewer.y, x, y);
+  if (!visible) return;
+
+  if (b.state === 'counter') {
+    const pulse = 0.5 + 0.4 * Math.sin(t * 20);
+    ctx.strokeStyle = `rgba(255, 183, 77, ${pulse})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(x, y, 130, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, BOSS_RADIUS + 6, t * 12, t * 12 + Math.PI * 1.2);
+    ctx.stroke();
+  }
+
+  // Silmät ja lyhty hehkuvat pimeässä
+  const lift = leapLift(b);
+  ctx.save();
+  const glow = b.enraged ? RAGE_COLOR : LANTERN_COLOR;
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = b.enraged ? 18 : 12;
+  ctx.fillStyle = glow;
+  const c = Math.cos(b.angle);
+  const s = Math.sin(b.angle);
+  for (const side of [-5, 5]) {
+    ctx.beginPath();
+    ctx.arc(x + c * 10 - s * side, y - lift * 18 + s * 10 + c * side, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const l = lanternPos(b, alpha);
+  ctx.beginPath();
+  ctx.arc(l.x, l.y - lift * 18, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBossBar(ctx, b, w) {
+  const bw = Math.min(360, w - 80);
+  const x = w / 2 - bw / 2;
+  const y = 132;
+  ctx.textAlign = 'center';
+  ctx.font = '26px Creepster, Impact, sans-serif';
+  ctx.fillStyle = b.enraged ? RAGE_COLOR : LANTERN_COLOR;
+  ctx.fillText(b.enraged ? `${BOSS_NAME} – raivo` : BOSS_NAME, w / 2, y);
+  ctx.fillStyle = '#000000aa';
+  ctx.fillRect(x, y + 8, bw, 10);
+  ctx.fillStyle = b.state === 'counter' ? '#ffffff' : '#c62828';
+  ctx.fillRect(x, y + 8, bw * Math.max(0, b.hp / b.maxHp), 10);
+  ctx.strokeStyle = '#ffb74d88';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y + 8, bw, 10);
+  ctx.font = '600 13px system-ui, sans-serif';
+  ctx.fillStyle = '#e6e9ef';
+  ctx.fillText('Aselepo: pelaajat eivät voi vahingoittaa toisiaan', w / 2, y + 36);
+}
+
 function drawPlayer(ctx, p, alpha, isLocal) {
   const x = lerp(p.px, p.x, alpha);
   const y = lerp(p.py, p.y, alpha);
@@ -733,6 +900,11 @@ function drawLighting(ctx, world, alpha, now, w, h, dpr, sight, target, viewer) 
     cone(viewer.x, viewer.y, target.aim, FLASHLIGHT_RANGE, FLASHLIGHT_HALF_ANGLE, 0.95);
   }
   for (const b of world.bullets) light(lerp(b.px, b.x, alpha), lerp(b.py, b.y, alpha), 45, 0.7);
+  // Bossin lyhty valaisee ympäristöä: bossin näkee tulevan, jos siihen on näköyhteys.
+  if (world.boss) {
+    const l = lanternPos(world.boss, alpha);
+    light(l.x, l.y, 150, 0.85 + 0.1 * Math.sin(now * 7));
+  }
 
   // Kaikki näköyhteyden ulkopuolella pimennetään uudelleen, valoista riippumatta.
   if (sight) {
@@ -1050,6 +1222,7 @@ function drawHud(ctx, world, localId, w, h, dt) {
     drawVignette(ctx, w, h, `rgba(200, 20, 20, ${hurtFlash * 0.45})`);
     hurtFlash = Math.max(0, hurtFlash - dt * 2.5);
   }
+  if (shake > 0) shake = Math.max(0, shake - dt * 2);
   if (flash > 0) {
     ctx.fillStyle = `rgba(255, 255, 255, ${flash * 0.8})`;
     ctx.fillRect(0, 0, w, h);
@@ -1079,8 +1252,9 @@ function drawHud(ctx, world, localId, w, h, dt) {
     drawLoadout(ctx, me, w, h);
     drawPrompt(ctx, world, me, w, h);
     drawPerksAndDash(ctx, me, h);
-    drawActiveEffects(ctx, me, w);
+    drawActiveEffects(ctx, me, w, world.boss ? 84 : 0);
   }
+  if (world.boss) drawBossBar(ctx, world.boss, w);
   drawAnnouncement(ctx, w, h);
   drawChat(ctx, h);
 
@@ -1119,7 +1293,7 @@ function drawPerksAndDash(ctx, me, h) {
   ctx.fillRect(22, h - 14, 90 * frac, 4);
 }
 
-function drawActiveEffects(ctx, me, w) {
+function drawActiveEffects(ctx, me, w, offset) {
   const parts = [];
   if (me.instaKill > 0) parts.push([`${POWERUPS.insta.name} ${Math.ceil(me.instaKill)} s`, POWERUPS.insta.color]);
   if (me.doubleMoney > 0) parts.push([`${POWERUPS.double.name} ${Math.ceil(me.doubleMoney)} s`, POWERUPS.double.color]);
@@ -1127,7 +1301,7 @@ function drawActiveEffects(ctx, me, w) {
   ctx.textAlign = 'center';
   parts.forEach(([text, color], i) => {
     ctx.fillStyle = color;
-    ctx.fillText(text, w / 2, 122 + i * 22);
+    ctx.fillText(text, w / 2, 122 + offset + i * 22);
   });
 }
 
@@ -1215,7 +1389,7 @@ function drawScoreboard(ctx, world, localId, w, inMatch) {
   ctx.fillRect(x0, 52, 238, 28 + rows.length * 22);
   ctx.fillStyle = '#8a93a6';
   ctx.textAlign = 'left';
-  ctx.fillText(inMatch ? `Pisteet (${TARGET_SCORE})` : 'Lämmittely', x0 + 12, 72);
+  ctx.fillText(inMatch ? `Pisteet (${world.targetScore ?? TARGET_SCORE})` : 'Lämmittely', x0 + 12, 72);
   ctx.textAlign = 'right';
   ctx.fillText(inMatch ? 'Pist.  Tap.  Zomb.' : 'K / D   Zomb.', w - 24, 72);
   rows.forEach((p, i) => {
@@ -1246,6 +1420,9 @@ function drawKillFeed(ctx) {
     if (k.cause === 'zombie') {
       killerName = 'Zombi';
       killerColor = ZOMBIE_COLOR;
+    } else if (k.cause === 'boss') {
+      killerName = BOSS_NAME;
+      killerColor = LANTERN_COLOR;
     } else if (k.cause === 'fog') {
       killerName = 'Myrkkysumu';
       killerColor = FOG_COLOR;

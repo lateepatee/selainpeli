@@ -25,7 +25,8 @@ export const DASH_COOLDOWN_TICKS = 180; // 3 s
 export const BULLET_RADIUS = 4;
 
 // Erät ja pisteet
-export const TARGET_SCORE = 15;      // ensimmäinen tähän voittaa pelin
+export const TARGET_SCORE = 20;      // oletuspisteraja; host voi valita aulassa
+export const TARGET_SCORE_OPTIONS = [10, 20, 30];
 export const WIN_POINTS = 3;         // erän viimeinen eloonjäänyt
 export const KILL_POINTS = 1;
 export const COUNTDOWN_TIME = 3;     // s ennen erän alkua

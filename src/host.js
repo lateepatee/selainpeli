@@ -1,7 +1,7 @@
 // Host: ajaa simulaatiota, ottaa vastaan liittyjien syötteet ja lähettää tilan kaikille.
 
 import { TICK, PLAYER_COLORS } from './constants.js';
-import { createWorld, addPlayer, removePlayer, step, startMatch, EMPTY_INPUT } from './game.js';
+import { createWorld, addPlayer, removePlayer, step, startMatch, setTargetScore, EMPTY_INPUT } from './game.js';
 import { readInput } from './input.js';
 import { botInput, forgetBot } from './bot.js';
 import { playEvents, updateAmbient, playChatBlip } from './sound.js';
@@ -22,8 +22,9 @@ const CHAT_LIMIT = 3;         // viestiä ...
 const CHAT_WINDOW = 5000;     // ... näin monessa millisekunnissa
 const LOOK_INTERVAL = 250;    // ms: hahmon muutoksia korkeintaan näin usein
 
-export function startHost({ name, bots, look, onRoom, onStatus }) {
+export function startHost({ name, bots, look, targetScore, onRoom, onStatus }) {
   const world = createWorld();
+  setTargetScore(world, targetScore);
   const myLook = sanitizeLook(look);
   const me = addPlayer(world, HOST_ID, sanitizeName(name), PLAYER_COLORS[myLook.color], lookParts(myLook));
   camera.x = me.x;

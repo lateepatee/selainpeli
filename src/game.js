@@ -12,11 +12,15 @@ import {
   ARENA_W, ARENA_H, OBSTACLES,
   PLAYER_RADIUS, PLAYER_SPEED, PLAYER_HP, RESPAWN_TIME, DASH_SPEED, DASH_TICKS, DASH_COOLDOWN_TICKS,
   BULLET_RADIUS,
-  TARGET_SCORE, WIN_POINTS, KILL_POINTS, COUNTDOWN_TIME, ROUND_END_TIME, GAME_OVER_TIME,
+  TARGET_SCORE, TARGET_SCORE_OPTIONS, WIN_POINTS, KILL_POINTS, COUNTDOWN_TIME, ROUND_END_TIME, GAME_OVER_TIME,
   ZONE_DELAY, ZONE_SHRINK_TIME, ZONE_MIN_R, ZONE_DPS, ZONE_DPS_FINAL, ZOMBIE_RADIUS,
 } from './constants.js';
 import { clamp, pointInRect, pushCircleOutOfRect } from './geometry.js';
 import { stepZombies } from './zombies.js';
+import {
+  createBoss, stepBoss, bossVulnerable, BOSS_RADIUS, BOSS_CHANCE, BOSS_MIN_ROUND, BOSS_SPAWN_TIME,
+  BOSS_KILL_MONEY, BOSS_SHARE_MONEY, BOSS_KILL_POINTS,
+} from './boss.js';
 import { setMap, MAP_ID } from './map.js';
 import { MAP_IDS } from './maps.js';
 import {
@@ -52,6 +56,9 @@ export function createWorld() {
     mapId: MAP_ID,
     powerups: [],         // { id, type, x, y, life }
     nextPowerupId: 1,
+    boss: null,           // boss.js
+    bossPlanned: false,   // tuleeko tässä erässä bossi
+    targetScore: TARGET_SCORE,
   };
 }
 
@@ -105,6 +112,16 @@ export function removePlayer(world, id) {
   delete world.players[id];
 }
 
+// Hostin aulassa valitsema pisteraja; vain sallitut arvot.
+export function setTargetScore(world, value) {
+  world.targetScore = TARGET_SCORE_OPTIONS.includes(value) ? value : TARGET_SCORE;
+}
+
+// Aselepo: Lyhtymiehen ollessa elossa pelaajat eivät voi vahingoittaa toisiaan.
+export function truceActive(world) {
+  return !!world.boss;
+}
+
 // Host kutsuu tätä "Aloita peli" -napista. Palauttaa false, jos pelaajia on liian vähän.
 export function startMatch(world) {
   if (Object.keys(world.players).length < 2) return false;
@@ -137,6 +154,9 @@ function startRound(world) {
   world.zombieTimer = 2;
   world.box = idleBox();
   world.powerups = [];
+  world.boss = null;
+  // Bossi yllättää satunnaisessa erässä; pelaajat eivät tiedä etukäteen.
+  world.bossPlanned = world.round >= BOSS_MIN_ROUND && Math.random() < BOSS_CHANCE;
   world.roundWinner = null;
   world.zone = createZone();
   world.phase = 'countdown';
@@ -208,6 +228,8 @@ export function step(world, inputs, dt) {
   stepPowerups(world, dt, events);
 
   stepZombies(world, dt, events, (p, amount, ev) => damagePlayer(world, p, amount, null, 'zombie', ev));
+  maybeSpawnBoss(world, events);
+  stepBoss(world, dt, events, (p, amount, ev) => damagePlayer(world, p, amount, null, 'boss', ev));
   stepBullets(world, dt, events);
 
   if (world.phase === 'playing') {
@@ -238,6 +260,8 @@ function toWarmup(world) {
   world.zombies = [];
   world.box = idleBox();
   world.powerups = [];
+  world.boss = null;
+  world.bossPlanned = false;
   for (const p of Object.values(world.players)) {
     if (!p.alive) spawn(world, p);
   }
@@ -245,7 +269,8 @@ function toWarmup(world) {
 
 function stepZone(world, dt, events) {
   const z = world.zone;
-  z.elapsed += dt;
+  // Aselevon aikana sumu ei sulkeudu, jotta bossin ehtii kaataa.
+  if (!truceActive(world)) z.elapsed += dt;
   const shrink = Math.min(1, Math.max(0, (z.elapsed - ZONE_DELAY) / ZONE_SHRINK_TIME));
   z.r = z.r0 + (ZONE_MIN_R - z.r0) * shrink;
   const dps = shrink >= 1 ? ZONE_DPS_FINAL : ZONE_DPS;
@@ -271,7 +296,7 @@ function checkRoundEnd(world, events) {
 
   const ranked = Object.values(world.players).sort((a, b) => b.score - a.score);
   const top = ranked[0];
-  if (top && top.score >= TARGET_SCORE && (!ranked[1] || top.score > ranked[1].score)) {
+  if (top && top.score >= world.targetScore && (!ranked[1] || top.score > ranked[1].score)) {
     world.phase = 'gameOver';
     world.phaseTimer = GAME_OVER_TIME;
     world.matchWinner = top.id;
@@ -470,7 +495,7 @@ function stepBullets(world, dt, events) {
     }
 
     for (const p of players) {
-      if (!p.alive || p.id === b.owner) continue;
+      if (!p.alive || p.id === b.owner || truceActive(world)) continue;
       const dx = p.x - b.x;
       const dy = p.y - b.y;
       if (dx * dx + dy * dy > hitRadius * hitRadius) continue;
@@ -478,6 +503,19 @@ function stepBullets(world, dt, events) {
       events.push({ type: 'hit', x: b.x, y: b.y, target: p.id, by: b.owner });
       damagePlayer(world, p, b.damage, b.owner, 'player', events);
       return explodeIfSplash(world, b, events);
+    }
+
+    const boss = world.boss;
+    if (boss && boss.state !== 'leap' && boss.hp > 0
+      && Math.hypot(boss.x - b.x, boss.y - b.y) < BOSS_RADIUS + BULLET_RADIUS) {
+      if (bossVulnerable(boss)) {
+        events.push({ type: 'bosshurt', x: b.x, y: b.y, by: b.owner });
+        damageBoss(world, b.damage, b.owner, events);
+        return explodeIfSplash(world, b, events);
+      }
+      // Torjunta: luoti kimpoaa (räjähtävä ammus ei räjähdä)
+      events.push({ type: 'deflect', x: b.x, y: b.y });
+      return false;
     }
 
     for (const z of world.zombies) {
@@ -505,11 +543,52 @@ function explodeIfSplash(world, b, events) {
     }
   }
   for (const p of Object.values(world.players)) {
-    if (p.alive && p.id !== b.owner && Math.hypot(p.x - b.x, p.y - b.y) < b.splash + PLAYER_RADIUS) {
+    if (p.alive && p.id !== b.owner && !truceActive(world) && Math.hypot(p.x - b.x, p.y - b.y) < b.splash + PLAYER_RADIUS) {
       damagePlayer(world, p, b.splashDamage, b.owner, 'player', events);
     }
   }
+  const boss = world.boss;
+  if (boss && bossVulnerable(boss) && boss.state !== 'leap'
+    && Math.hypot(boss.x - b.x, boss.y - b.y) < b.splash + BOSS_RADIUS) {
+    damageBoss(world, b.splashDamage, b.owner, events);
+  }
   return false;
+}
+
+// --- Bossi ---
+
+function maybeSpawnBoss(world, events) {
+  if (!world.bossPlanned || world.boss || world.phase !== 'playing') return;
+  if (!world.zone || world.zone.elapsed < BOSS_SPAWN_TIME) return;
+  const alive = Object.values(world.players).filter((p) => p.alive);
+  if (alive.length < 2) return;
+  world.bossPlanned = false;
+  world.boss = createBoss(world, alive);
+  events.push({ type: 'bossSpawn', x: world.boss.x, y: world.boss.y });
+}
+
+// Kertaisku ei tehoa bossiin. Viimeinen isku palkitaan, muut saavat osuutensa rahasta.
+function damageBoss(world, amount, ownerId, events) {
+  const boss = world.boss;
+  if (!boss || boss.hp <= 0) return;
+  const dealt = Math.min(amount, boss.hp);
+  boss.hp -= amount;
+  if (world.players[ownerId]) boss.damageBy[ownerId] = (boss.damageBy[ownerId] || 0) + dealt;
+  if (boss.hp > 0) return;
+
+  const killer = world.players[ownerId];
+  if (killer) {
+    addMoney(killer, BOSS_KILL_MONEY);
+    if (world.phase === 'playing') killer.score += BOSS_KILL_POINTS;
+  }
+  const others = Object.entries(boss.damageBy).filter(([id]) => id !== ownerId && world.players[id]);
+  const total = others.reduce((sum, [, d]) => sum + d, 0);
+  for (const [id, d] of others) addMoney(world.players[id], Math.round((BOSS_SHARE_MONEY * d) / total));
+  events.push({ type: 'bossKill', x: boss.x, y: boss.y, by: ownerId });
+  // Bossista putoaa aina tehoste, vaikka lattialla olisi jo maksimimäärä.
+  const type = POWERUP_IDS[Math.floor(Math.random() * POWERUP_IDS.length)];
+  world.powerups.push({ id: world.nextPowerupId++, type, x: boss.x, y: boss.y, life: POWERUP_LIFE });
+  world.boss = null;
 }
 
 function damageZombie(world, z, amount, ownerId, events) {

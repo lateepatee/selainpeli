@@ -218,16 +218,30 @@ export function startClient({ name, code, look, onReady, onFail }) {
       zombies.push({ x, y, px: x, py: y, angle: lerpAngle(za.angle, zb.angle, t), emerging: zb.emerging });
     }
 
+    // Bossi pehmennetään kuten zombit; hypyn aikana suoraan uusimpaan, ettei lento näytä oudolta.
+    let boss = null;
+    if (b.boss) {
+      const ba = a.boss;
+      boss = { ...b.boss };
+      if (ba && b.boss.state !== 'leap') {
+        boss.x = ba.x + (b.boss.x - ba.x) * t;
+        boss.y = ba.y + (b.boss.y - ba.y) * t;
+      }
+      boss.px = boss.x;
+      boss.py = boss.y;
+    }
+
     // Efektit laukaistaan vasta kun piirtoaika saavuttaa ne.
     const due = [];
     while (eventQueue.length > 0 && eventQueue[0].t <= renderT) due.push(eventQueue.shift().e);
 
     const view = {
       players, bullets, zombies,
-      phase: latest.phase, phaseTimer: latest.phaseTimer, round: latest.round,
+      phase: latest.phase, phaseTimer: latest.phaseTimer, round: latest.round, targetScore: latest.targetScore,
       roundWinner: latest.roundWinner, matchWinner: latest.matchWinner, zone: latest.zone,
       box: latest.box,
       powerups: latest.powerups,
+      boss,
     };
     return { view, due };
   }

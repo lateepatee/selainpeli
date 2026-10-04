@@ -231,6 +231,70 @@ function play(e, localId) {
       [660, 880, 1320].forEach((f, i) => tone(o, { freq: f, dur: 0.25, wave: 'triangle', vol: 0.5, delay: i * 0.07 }));
       break;
     }
+    case 'bossSpawn': {
+      // Matala torvi ja kumea kello koko kentälle
+      const o = spatial(undefined, 0, 0.7);
+      tone(o, { freq: 58, freqEnd: 44, dur: 2.4, wave: 'sawtooth', vol: 0.5, attack: 0.4, lowpass: 400 });
+      tone(o, { freq: 87, freqEnd: 66, dur: 2.2, wave: 'sawtooth', vol: 0.3, attack: 0.5, lowpass: 500 });
+      tone(o, { freq: 220, dur: 2.5, vol: 0.25, delay: 0.3 });
+      break;
+    }
+    case 'bossRage': {
+      const o = spatial(undefined, 0, 0.8);
+      tone(o, { freq: 120, freqEnd: 60, dur: 1.4, wave: 'sawtooth', vol: 0.5, attack: 0.1, lowpass: 600 });
+      noiseBurst(o, { dur: 0.8, filter: 'bandpass', freq: 300, freqEnd: 1200, q: 2, vol: 0.7 });
+      break;
+    }
+    case 'bossLeapWind': {
+      const o = spatial(e.x, e.y, 0.6);
+      if (o) tone(o, { freq: 260, freqEnd: 900, dur: 0.7, wave: 'sawtooth', vol: 0.25, lowpass: 1800 });
+      break;
+    }
+    case 'bossLand': {
+      const o = spatial(e.x, e.y, 0.9);
+      if (!o) break;
+      noiseBurst(o, { dur: 0.6, filter: 'lowpass', freq: 900, freqEnd: 60, vol: 1 });
+      tone(o, { freq: 70, freqEnd: 30, dur: 0.5, vol: 0.8 });
+      break;
+    }
+    case 'bossCounterStart': {
+      const o = spatial(e.x, e.y, 0.5);
+      if (!o) break;
+      tone(o, { freq: 880, dur: 2, wave: 'triangle', vol: 0.3 });
+      tone(o, { freq: 1318, dur: 2, wave: 'triangle', vol: 0.15 });
+      break;
+    }
+    case 'bossCounter': {
+      const o = spatial(e.x, e.y, 0.9);
+      if (!o) break;
+      noiseBurst(o, { dur: 0.4, filter: 'bandpass', freq: 400, freqEnd: 2500, q: 1, vol: 1 });
+      tone(o, { freq: 110, freqEnd: 40, dur: 0.45, vol: 0.7 });
+      break;
+    }
+    case 'deflect': {
+      const o = spatial(e.x, e.y, 0.35);
+      if (o) tone(o, { freq: 2200 + Math.random() * 600, dur: 0.08, wave: 'triangle', vol: 0.5 });
+      break;
+    }
+    case 'bossHit': {
+      const o = spatial(e.x, e.y, e.heavy ? 0.9 : 0.7);
+      if (!o) break;
+      noiseBurst(o, { dur: 0.15, filter: 'lowpass', freq: 600, vol: 1 });
+      tone(o, { freq: e.heavy ? 90 : 130, freqEnd: 40, dur: 0.25, vol: 0.7 });
+      break;
+    }
+    case 'bosshurt': {
+      const o = spatial(e.x, e.y, 0.25);
+      if (o) noiseBurst(o, { dur: 0.05, filter: 'bandpass', freq: 1200, q: 3, vol: 0.6 });
+      break;
+    }
+    case 'bossKill': {
+      const o = spatial(undefined, 0, 0.8);
+      noiseBurst(o, { dur: 1.2, filter: 'lowpass', freq: 1500, freqEnd: 80, vol: 1 });
+      tone(o, { freq: 160, freqEnd: 40, dur: 1.6, wave: 'sawtooth', vol: 0.4, lowpass: 700 });
+      [392, 494, 587, 784].forEach((f, i) => tone(o, { freq: f, dur: 0.5, wave: 'triangle', vol: 0.35, delay: 0.4 + i * 0.12 }));
+      break;
+    }
     case 'nuke': {
       const o = spatial(undefined, 0, 0.8);
       noiseBurst(o, { dur: 1.6, filter: 'lowpass', freq: 2500, freqEnd: 80, vol: 1 });

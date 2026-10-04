@@ -16,6 +16,7 @@ const ctx = canvas.getContext('2d');
 const lobby = document.getElementById('lobby');
 const nameInput = document.getElementById('name');
 const botsSelect = document.getElementById('bots');
+const targetSelect = document.getElementById('target');
 const codeInput = document.getElementById('code');
 const hostBtn = document.getElementById('host');
 const joinBtn = document.getElementById('join');
@@ -61,6 +62,7 @@ hostBtn.addEventListener('click', () => {
     name,
     look,
     bots: Number(botsSelect.value),
+    targetScore: Number(targetSelect.value),
     onRoom: () => updateRoomInfo(),
   }));
   showGame();

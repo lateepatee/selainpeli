@@ -15,7 +15,8 @@ Botit täyttävät tyhjiä paikkoja ja väistyvät, kun oikeita pelaajia liittyy
 ### Säännöt
 
 - Erässä ei synnytä uudelleen. Viimeinen eloonjäänyt saa 3 pistettä, ja jokaisesta pelaajan tappamisesta saa 1 pisteen.
-- Ensimmäinen 15 pisteeseen päässyt voittaa pelin.
+- Ensimmäinen pisterajaan päässyt voittaa pelin. Host valitsee rajan aulassa (10, 20 tai 30, oletus 20).
+- Kolmannesta erästä alkaen erään voi ilmestyä **Lyhtymies**. Sen ollessa elossa on aselepo: pelaajat eivät voi vahingoittaa toisiaan. Kaataja saa 2 pistettä, muut rahaa osuutensa mukaan.
 - Jokainen erä pelataan eri kentällä: Bunkkeri, Kartano, Hautausmaa tai Varasto.
 - Zombeista ja pelaajista saa rahaa. Rahalla ostetaan seinäaseita, arpalaatikosta satunnaisia aseita ja juoma-automaateista erän ajan voimassa olevia etuja. Raha säilyy erästä toiseen, aseet ja juomat eivät.
 - Zombeista putoaa joskus tehosteita (täydet ammukset, kertaisku, ydinpommi, tuplarahat). Ne saa se, joka ehtii ensin.
@@ -42,6 +43,14 @@ python -m http.server 8000
 ```
 
 Avaa sitten http://localhost:8000. Kaksi selainikkunaa riittää moninpelin kokeilemiseen.
+
+Kun verkkoviestit muuttuvat, nosta versio `PEER_PREFIX` tiedostossa `src/protocol.js` ja aja ennen julkaisua:
+
+```sh
+python tools/versio.py
+```
+
+Skripti versioi moduulien osoitteet `index.html`:ssä, jotta selaimen välimuisti ei sekoita vanhaa ja uutta versiota.
 
 ## Tekniikka
 

@@ -137,6 +137,16 @@ function nearestVisibleEnemy(world, me) {
   }
   if (zombie) return { id: `z${zombie.id}`, x: zombie.x, y: zombie.y };
 
+  // Bossi seuraavaksi, mutta ei torjunnan aikana (luodit kimpoaisivat).
+  const boss = world.boss;
+  if (boss && boss.state !== 'counter' && boss.state !== 'emerge'
+    && Math.hypot(boss.x - me.x, boss.y - me.y) < 450 && lineOfSight(me.x, me.y, boss.x, boss.y)) {
+    return { id: 'boss', x: boss.x, y: boss.y };
+  }
+
+  // Aselevon aikana pelaajia ei ammuta.
+  if (world.boss) return null;
+
   let best = null;
   let bestDist = SIGHT_RANGE;
   for (const p of Object.values(world.players)) {
