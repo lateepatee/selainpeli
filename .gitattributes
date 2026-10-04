@@ -1,0 +1,3 @@
+# Rivinvaihdot aina LF: index.html:n import-kartan tarkistussumma (CSP) riippuu tarkasta sisällöstä.
+* text=auto eol=lf
+*.ttf binary
