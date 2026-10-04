@@ -23,9 +23,11 @@ export const BOSS_KILL_MONEY = 1000;    // viimeisen iskun tekijälle
 export const BOSS_SHARE_MONEY = 800;    // jaetaan muille vahinkoa tehneille osuuksien mukaan
 export const BOSS_KILL_POINTS = 2;
 
-// Neljällä pelaajalla 4000 HP: noin puolen minuutin taistelu.
-const HP_BASE = 1200;
-const HP_PER_PLAYER = 700;
+// Neljällä oikealla pelaajalla 2600 HP (pelitestissä 4000 oli liikaa: päästiin puoleen väliin).
+// Botti lasketaan puolikkaaksi pelaajaksi, koska se tekee bossiin vähän vahinkoa.
+const HP_BASE = 800;
+const HP_PER_PLAYER = 450;
+const BOT_WEIGHT = 0.5;
 const SPEED = 125;
 const RAGE_SPEED = 165;                 // raivossa, edelleen hitaampi kuin pelaaja (220)
 const RAGE_MELEE_COOLDOWN = 0.75;
@@ -61,7 +63,8 @@ export function createBoss(world, alivePlayers) {
   const inset = BOSS_RADIUS + 2;
   const x = win.side === 'left' ? inset : win.side === 'right' ? ARENA_W - inset : win.x;
   const y = win.side === 'top' ? inset : win.side === 'bottom' ? ARENA_H - inset : win.y;
-  const maxHp = HP_BASE + HP_PER_PLAYER * alivePlayers.length;
+  const weight = alivePlayers.reduce((sum, p) => sum + (p.id.startsWith('bot') ? BOT_WEIGHT : 1), 0);
+  const maxHp = Math.round(HP_BASE + HP_PER_PLAYER * weight);
   return {
     x, y, px: x, py: y, angle: 0,
     hp: maxHp, maxHp,
