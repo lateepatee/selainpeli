@@ -24,7 +24,7 @@ import {
 import { setMap, MAP_ID } from './map.js';
 import { MAP_IDS } from './maps.js';
 import {
-  WEAPONS, START_MONEY, MONEY_ZOMBIE_HIT, MONEY_ZOMBIE_KILL, MONEY_PLAYER_KILL, SWAP_TIME,
+  WEAPONS, START_MONEY, MONEY_CAP, MONEY_ZOMBIE_HIT, MONEY_ZOMBIE_KILL, MONEY_PLAYER_KILL, SWAP_TIME,
   BOX_PRICE, BOX_SPIN_TIME, BOX_TAKE_TIME, findInteractable, rollBoxWeapon,
   ARMOR_HP, RELOAD_PERK_MUL, RAPID_PERK_MUL, maxHpOf,
   POWERUPS, POWERUP_IDS, POWERUP_DROP_CHANCE, POWERUP_LIFE, POWERUP_PICKUP_RANGE,
@@ -611,8 +611,9 @@ function damageZombie(world, z, amount, ownerId, events) {
   }
 }
 
+// Kaikki ansaittu raha kulkee tätä kautta. Katon yli menevä raha häviää.
 function addMoney(p, amount) {
-  p.money += p.doubleMoney > 0 ? amount * 2 : amount;
+  p.money = Math.min(MONEY_CAP, p.money + (p.doubleMoney > 0 ? amount * 2 : amount));
 }
 
 // --- Tehosteet ---

@@ -12,7 +12,7 @@ import { drawCharacter } from './appearance.js';
 import { AURA_RADIUS, FLASHLIGHT_RANGE, FLASHLIGHT_HALF_ANGLE, isLitFor } from './vision.js';
 import { BOSS_NAME, BOSS_NAME_OBJECT, BOSS_RADIUS } from './boss.js';
 import {
-  WEAPONS, WALL_BUYS, BOX, findInteractable,
+  WEAPONS, WALL_BUYS, BOX, findInteractable, MONEY_CAP,
   PERKS, PERK_IDS, PERK_MACHINES, MACHINE_SIZE, RELOAD_PERK_MUL, maxHpOf, POWERUPS,
 } from './weapons.js';
 
@@ -88,10 +88,12 @@ export function cameraTarget(world, localId) {
 
 // Muuttaa simulaation tapahtumat efekteiksi.
 export function handleEvents(events, world, localId) {
+  // Täynnä olevaan kukkaroon ei tule lisää, joten "+10"-ilmoituksiakaan ei näytetä.
+  const capped = (world.players[localId]?.money ?? 0) >= MONEY_CAP;
   for (const e of events) {
-    if (e.type === 'zhit' && e.by === localId) addMoneyPopup(10);
-    if (e.type === 'zkill' && e.by === localId) addMoneyPopup(60);
-    if (e.type === 'kill' && e.killer === localId) addMoneyPopup(200);
+    if (!capped && e.type === 'zhit' && e.by === localId) addMoneyPopup(10);
+    if (!capped && e.type === 'zkill' && e.by === localId) addMoneyPopup(60);
+    if (!capped && e.type === 'kill' && e.killer === localId) addMoneyPopup(200);
     if (e.type === 'hit') {
       burst(e.x, e.y, world.players[e.target]?.color || '#fff', 8, 140);
       if (e.target === localId) hurtFlash = 0.6;
@@ -1334,7 +1336,7 @@ function drawLoadout(ctx, me, w, h) {
   ctx.textAlign = 'right';
   ctx.font = '700 26px system-ui, sans-serif';
   ctx.fillStyle = MONEY_COLOR;
-  ctx.fillText(`${me.money} $`, right, h - 100);
+  ctx.fillText(me.money >= MONEY_CAP ? `${me.money} $ (max)` : `${me.money} $`, right, h - 100);
 
   // Ansaitut rahat nousevat summan yläpuolelle ja haalistuvat.
   const now = performance.now();

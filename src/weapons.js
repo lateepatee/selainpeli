@@ -1,6 +1,7 @@
 // Aseet, raha ja ostopaikat. Sama logiikka hostin simulaatiolle ja ruudun ostovihjeille.
 
 export const START_MONEY = 500;
+export const MONEY_CAP = 3000;        // rahaa ei voi kertyä enempää: säästäminen ei kannata
 export const MONEY_ZOMBIE_HIT = 10;
 export const MONEY_ZOMBIE_KILL = 60;
 export const MONEY_PLAYER_KILL = 200;
@@ -50,7 +51,7 @@ export const BOX_SPIN_TIME = 3;
 export const BOX_TAKE_TIME = 8;
 // Arvontapainot: erikoisase on harvinainen.
 const BOX_POOL = [
-  ['shotgun', 16], ['smg', 16], ['rifle', 16], ['sniper', 18], ['lmg', 18], ['wonder', 6],
+  ['shotgun', 16], ['smg', 16], ['rifle', 16], ['sniper', 18], ['lmg', 18], ['wonder', 10],
 ];
 
 export function ammoPrice(buy) {
