@@ -13,6 +13,7 @@ import { onMapChange } from './map.js';
 
 const CELL = 20;
 const FLOW_INTERVAL = 0.2; // s
+export const BOSS_FIGHT_ZOMBIES = 6;
 let COLS = 0;
 let ROWS = 0;
 let blocked = null;
@@ -151,7 +152,9 @@ export function stepZombies(world, dt, events, damagePlayer) {
 
   const level = zombieLevel(world);
   const warmup = world.phase === 'warmup';
-  const maxZombies = warmup ? WARMUP_ZOMBIES : Math.min(ZOMBIE_MAX, 8 + 3 * alive.length + 4 * level);
+  let maxZombies = warmup ? WARMUP_ZOMBIES : Math.min(ZOMBIE_MAX, 8 + 3 * alive.length + 4 * level);
+  // Bossitaistelussa vain vähän zombeja, jotta tilaa jää liikkua.
+  if (world.boss) maxZombies = Math.min(maxZombies, BOSS_FIGHT_ZOMBIES);
   world.zombieTimer -= dt;
   if (world.zombieTimer <= 0 && world.zombies.length < maxZombies) {
     spawnZombie(world, alive, level);

@@ -111,7 +111,7 @@ export function findInteractable(world, p) {
   return { kind: 'wall', price: best.price, label: `Osta ${w.name} (${best.price} $)`, buy: best };
 }
 
-// --- Juoma-automaatit (voimassa erän loppuun) ---
+// --- Juoma-automaatit (voimassa koko pelin, nollautuvat uudessa pelissä) ---
 
 export const PERKS = {
   armor: { name: 'Panssarijuoma', short: 'P', price: 1000, color: '#e53935' },

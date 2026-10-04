@@ -18,7 +18,7 @@ Botit täyttävät tyhjiä paikkoja ja väistyvät, kun oikeita pelaajia liittyy
 - Ensimmäinen pisterajaan päässyt voittaa pelin. Host valitsee rajan aulassa (10, 20 tai 30, oletus 20).
 - Kolmannesta erästä alkaen erään voi ilmestyä **Lyhtymies**. Sen ollessa elossa on aselepo: pelaajat eivät voi vahingoittaa toisiaan. Kaataja saa 2 pistettä, muut rahaa osuutensa mukaan.
 - Jokainen erä pelataan eri kentällä: Bunkkeri, Kartano, Hautausmaa tai Varasto.
-- Zombeista ja pelaajista saa rahaa. Rahalla ostetaan seinäaseita, arpalaatikosta satunnaisia aseita ja juoma-automaateista erän ajan voimassa olevia etuja. Raha säilyy erästä toiseen, aseet ja juomat eivät.
+- Zombeista ja pelaajista saa rahaa. Rahalla ostetaan seinäaseita, arpalaatikosta satunnaisia aseita ja juoma-automaateista pysyviä etuja. Raha ja juomat säilyvät erästä toiseen koko pelin, aseet aloitetaan joka erässä alusta.
 - Zombeista putoaa joskus tehosteita (täydet ammukset, kertaisku, ydinpommi, tuplarahat). Ne saa se, joka ehtii ensin.
 
 ### Näppäimet

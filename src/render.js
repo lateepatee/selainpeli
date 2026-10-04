@@ -117,6 +117,8 @@ export function handleEvents(events, world, localId) {
     } else if (e.type === 'bossRage') {
       announce('Lyhtymies raivostuu!', RAGE_COLOR);
       burst(e.x, e.y, RAGE_COLOR, 40, 300);
+    } else if (e.type === 'zflee') {
+      burst(e.x, e.y, '#3b3f36', 14, 90);
     } else if (e.type === 'bosshurt') {
       burst(e.x, e.y, '#3a2f45', 5, 120);
     } else if (e.type === 'deflect') {

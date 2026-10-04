@@ -16,7 +16,7 @@ import {
   ZONE_DELAY, ZONE_SHRINK_TIME, ZONE_MIN_R, ZONE_DPS, ZONE_DPS_FINAL, ZOMBIE_RADIUS,
 } from './constants.js';
 import { clamp, pointInRect, pushCircleOutOfRect } from './geometry.js';
-import { stepZombies } from './zombies.js';
+import { stepZombies, BOSS_FIGHT_ZOMBIES } from './zombies.js';
 import {
   createBoss, stepBoss, bossVulnerable, BOSS_RADIUS, BOSS_CHANCE, BOSS_MIN_ROUND, BOSS_SPAWN_TIME,
   BOSS_KILL_MONEY, BOSS_SHARE_MONEY, BOSS_KILL_POINTS,
@@ -26,7 +26,7 @@ import { MAP_IDS } from './maps.js';
 import {
   WEAPONS, START_MONEY, MONEY_ZOMBIE_HIT, MONEY_ZOMBIE_KILL, MONEY_PLAYER_KILL, SWAP_TIME,
   BOX_PRICE, BOX_SPIN_TIME, BOX_TAKE_TIME, findInteractable, rollBoxWeapon,
-  ARMOR_HP, RELOAD_PERK_MUL, RAPID_PERK_MUL,
+  ARMOR_HP, RELOAD_PERK_MUL, RAPID_PERK_MUL, maxHpOf,
   POWERUPS, POWERUP_IDS, POWERUP_DROP_CHANCE, POWERUP_LIFE, POWERUP_PICKUP_RANGE,
   POWERUP_MAX_ON_FLOOR, POWERUP_WEIGHTS,
 } from './weapons.js';
@@ -165,7 +165,7 @@ function startRound(world) {
   const players = Object.values(world.players);
   for (const p of players) p.alive = false;
   for (const p of players) {
-    // Raha säilyy pelin sisällä erästä toiseen, aseet aloitetaan alusta.
+    // Raha ja juomat säilyvät pelin sisällä erästä toiseen, aseet aloitetaan alusta.
     spawn(world, p, world.round > 1);
     p.killedBy = null;
   }
@@ -565,6 +565,11 @@ function maybeSpawnBoss(world, events) {
   world.bossPlanned = false;
   world.boss = createBoss(world, alive);
   events.push({ type: 'bossSpawn', x: world.boss.x, y: world.boss.y });
+
+  // Bossin ilmestyessä ylimääräiset zombit hajoavat savuksi: lähimmät jäävät, kauimmat lähtevät.
+  const nearest = (z) => Math.min(...alive.map((p) => Math.hypot(p.x - z.x, p.y - z.y)));
+  world.zombies.sort((a, b) => nearest(a) - nearest(b));
+  for (const z of world.zombies.splice(BOSS_FIGHT_ZOMBIES)) events.push({ type: 'zflee', x: z.x, y: z.y });
 }
 
 // Kertaisku ei tehoa bossiin. Viimeinen isku palkitaan, muut saavat osuutensa rahasta.
@@ -675,7 +680,8 @@ function kill(world, victim, killerId, cause, events) {
 }
 
 // Etsii satunnaisen paikan, joka ei ole esteen sisällä eikä liian lähellä muita.
-function spawn(world, p, keepMoney = false) {
+// keepProgress: erien välillä raha ja juomat säilyvät; uudessa pelissä ja lämmittelyssä nollataan.
+function spawn(world, p, keepProgress = false) {
   const others = Object.values(world.players).filter((o) => o !== p && o.alive);
   let best = null;
   let bestDist = -1;
@@ -694,13 +700,15 @@ function spawn(world, p, keepMoney = false) {
 
   p.x = p.px = best.x;
   p.y = p.py = best.y;
-  p.hp = PLAYER_HP;
+  if (!keepProgress) {
+    p.money = START_MONEY;
+    p.perks = {};
+  }
+  p.hp = maxHpOf(p);
   p.alive = true;
   p.cooldown = 0;
   p.respawnTimer = 0;
-  // Joka syntymässä aloitetaan pistoolilla. Raha nollautuu paitsi erien välillä.
-  if (!keepMoney) p.money = START_MONEY;
-  p.perks = {};
+  // Joka syntymässä aloitetaan pistoolilla.
   p.instaKill = 0;
   p.doubleMoney = 0;
   p.dashTicks = 0;
