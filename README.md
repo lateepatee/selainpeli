@@ -58,6 +58,10 @@ Skripti lisää jokaisen moduulin osoitteeseen sen sisällöstä lasketun tiivis
 - Moninpeli kulkee selainten välillä suoraan (WebRTC, [PeerJS](https://peerjs.com/)). Huoneen luoja toimii hostina, joka ajaa pelin ja lähettää tilan muille. Liittyjän oma liike ennustetaan, jotta ohjaus tuntuu viiveettömältä.
 - Äänet syntetisoidaan selaimessa (Web Audio), joten äänitiedostoja ei ole.
 
+## 3D-kokeilu
+
+`kokeilu3d.html` on erillinen kokeilu: sama peli 3D:nä viistosta kamerasta, PS1-tyylisellä matalalla resoluutiolla, sumulla ja pimeydellä. Siinä pelaat yksin kolmea bottia vastaan ilman verkkoa (WASD, hiiri, Shift tai oikea nappi väistö). Nykyinen peli (`index.html`) ei muutu. Sivun osoitteeseen voi lisätä `?fps=1` (ruudunpäivitys näkyviin) ja `?nopeus=4` (simulaatio nopeutettuna).
+
 ## Yksityisyys
 
 Pelaajat yhdistyvät toisiinsa suoraan, joten samassa huoneessa olevat näkevät toistensa IP-osoitteet, kuten P2P-peleissä yleensä. Pelaa siis tuttujen kanssa. Yhteyden muodostamiseen käytetään PeerJS:n ilmaista palvelinta. Jos suora yhteys ei jonkun verkossa onnistu, pelin liikenne kulkee PeerJS:n välityspalvelimen (TURN) kautta.
@@ -66,3 +70,4 @@ Pelaajat yhdistyvät toisiinsa suoraan, joten samassa huoneessa olevat näkevät
 
 - Kierroslaskurin fontti [Creepster](https://fonts.google.com/specimen/Creepster) (Font Diner), SIL Open Font License 1.1: [assets/fonts/OFL.txt](assets/fonts/OFL.txt).
 - [PeerJS](https://github.com/peers/peerjs), MIT-lisenssi, ladataan CDN:stä.
+- [Three.js](https://threejs.org/) **0.170.0**, MIT-lisenssi ([vendor/three-0.170.0/LICENSE](vendor/three-0.170.0/LICENSE)). Vain 3D-kokeilulle (`kokeilu3d.html`, `src/kokeilu3d/`). Tiedosto `build/three.module.min.js` on kopioitu repoon osoitteesta https://cdn.jsdelivr.net/npm/three@0.170.0/ kansioon `vendor/three-0.170.0/`, eikä sitä ladata ulkoa. Päivitys on tietoinen päätös: vaihda versio ja lataa tiedostot uudelleen samasta lähteestä.

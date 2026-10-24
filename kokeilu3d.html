@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Kokeilusivu: koodia vain omalta sivulta (Three.js on vendor/-kansiossa), ei ulkoisia yhteyksiä. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Zombiareena 3D-kokeilu</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="src/kokeilu3d/kokeilu3d.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div id="hud-round"></div>
+    <div id="hud-boss"></div>
+    <div id="hud-msg"></div>
+    <div id="hud-hint"></div>
+    <div id="hud-bottom">
+      <span id="hud-hp"></span>
+      <span id="hud-ammo"></span>
+    </div>
+    <div id="hud-fps"></div>
+  </div>
+
+  <div id="start" class="overlay">
+    <h1>Zombiareena 3D</h1>
+    <p>Kokeilu: PS1-tyylinen kauhu viistosta kamerasta. Ei verkkoa: sinä ja kolme bottia.</p>
+    <p>WASD liike · hiiri tähtää ja ampuu · Shift tai oikea nappi väistö<br>R lataus · E osta · Q vaihda ase · M mykistä</p>
+    <p class="go">Klikkaa aloittaaksesi</p>
+  </div>
+
+  <script type="module" src="src/kokeilu3d/main.js"></script>
+</body>
+</html>
