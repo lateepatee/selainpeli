@@ -171,3 +171,28 @@ Ilman näitä vihjeitä muutos kannattaa jättää pois, koska pelkkä näkymät
 3. **Ehdotus 4: toisto ja voittajan hetki** (M). Selvin "vau, mitä tämä on?" -hetki: toisto paljastaa pimeässä tapahtuneen. Tekee erän päättymisestä viihdettä ja on pelkkää clientin puolen työtä.
 
 Seuraavina: ehdotus 2 (ääni pimeässä, yhdessä kysymyksen 2 ratkaisun kanssa) ja ehdotus 8 (kruunu). Ehdotukset 7 ja 9 ovat suuria; ne kannattaa tehdä vasta, kun pikavoitot ovat sisällä ja kavereiden palaute on kuultu.
+
+---
+
+## Lisätty koordinaattorin toimesta
+
+### 10. Äänet hiljaiseksi taustavälilehdessä (S)
+
+Peli soittaa ääniä täysillä, vaikka välilehti on taustalla. Host jatkaa simulaatiota taustalla, mutta äänet voisi hiljentää `document.hidden`-tilassa (`sound.js`, `main.js`). Omistaja huomasi tämän testi-ikkunoita sulkiessaan.
+
+### VHS-tilan säätöarvot talteen (2D-näyte, haara poistettu)
+
+Omistajan palaute ensimmäisestä VHS-näytteestä: tunnelma parempi, mutta liikaa suttua, kohinaa ja suhinaa. Hillityt arvot, jotka omistaja näki viimeisenä, käyvät pohjaksi 3D:n jälkikäsittelyyn:
+
+```js
+const CFG = {
+  lowW: 960, sharp: true, strip: 4, posterLevels: 14, saturation: 0.62, satK: 0.3,
+  bloomAlpha: 0.3, bloomBlur: 0.6, shift: 0.35, shiftK: 0.8, shiftTrack: 0.6,
+  grain: 0.022, grainK: 0.015, dither: 0.03, scan: 0.14, sway: 0.35, swayK: 0.7,
+  tearAmp: 4, trackFirst: 6, trackGap: 14, trackGapRnd: 16, trackGapK: 0.6,
+  trackShift: 3, trackShiftRnd: 4, trackShiftK: 3, trackNoise: 0.07, snowAlpha: 0.08,
+  bossAmp: 3, bossAmpK: 4, bossGhost: 0.14, zombieGhost: 0.12, zombieGhostK: 0.1,
+};
+// Ääni: hurina 0.02 + 0.03 * vaara, suhina 0.003 + 0.004 * vaara + 0.008 * seurantavirhe.
+// k ja vaara = 0..1 (lähin näkyvä zombi ja oma matala HP).
+```

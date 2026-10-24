@@ -4,34 +4,35 @@ Päivitetty 2026-10-24. Koordinaattori päivittää tämän jokaisen aallon lopu
 
 ## Lyhyesti
 
-- **Aalto 1 (työkalut) on valmis** ja kaikki on mergetty mainiin. Mitään ei ole kesken.
-- **Main on 10 committia origin/mainia edellä, eikä mitään ole pushattu.** Omistaja pushaa itse.
-- Seuraavaksi: omistaja hyväksyy (tai muuttaa) aallon 2 ja vastaa kahteen kysymykseen alla.
+- **Suunta on päätetty: peli siirtyy 3D:hen** (Three.js 0.170.0, `vendor/`, omistajan hyväksymä pysyvästi). 2D-piirto (`render.js`) poistuu, eikä varaversiota jätetä.
+- Viisto kamera on pohja. Olan yli -kamerasta tehdään demo, jonka jälkeen omistaja valitsee pääkameran.
+- Main on origin/mainia edellä, eikä mitään ole pushattu. Omistaja pushaa itse.
 
 ## Valmistunut (mainissa)
 
-| Työ | Haara | Mitä |
-|---|---|---|
-| Tasapainosimulaattori | `lateepatee/simulaattori` | `node tools/sim/simuloi.mjs`, ohje `tools/sim/README.md` |
-| Testisarja | `lateepatee/testit` | `npm test`, 66 testiä, noin 2 s |
-| Tähtäysbugin korjaus | `lateepatee/tahtayskorjaus` | Vieras pystyi jäädyttämään pelin `aim: 1e300`:lla. Nyt `wrapAngle` (`geometry.js`) |
-| Selainpelitestaus | `lateepatee/pelitestaus` | Ohje `agentit/pelitestaus.md`, ajettu kerran läpi |
+| Työ | Mitä |
+|---|---|
+| Aalto 1: simulaattori, testit, tähtäyskorjaus, pelitestausohje | ks. `tools/sim/README.md`, `npm test`, `agentit/pelitestaus.md` |
+| Aalto 2: suunnittelija | `agentit/ehdotukset.md` (9 ehdotusta + koordinaattorin lisäykset, VHS-säätöarvot) |
+| Kirjastosääntö | `CLAUDE.md`, Kirjastot-osio |
+| 3D-kokeilu | `kokeilu3d.html`, `src/kokeilu3d/`, `vendor/three-0.170.0/`: paikallinen peli boteilla, viisto kamera, PS1/Puppet Combo -ilme |
 
-Aallon 1 worktreet ja haarat on poistettu (`orca worktree rm`). Mainin lisäksi ei ole muita worktreitä.
+2D-grafiikkakokeilut (korkeat seinät, VHS) hylättiin, ja niiden haarat poistettiin. VHS-arvot ovat tallessa `ehdotukset.md`:ssä.
 
-Uudet tokenisäännöt ovat `koordinaattori.md`:ssä: Sonnet-työntekijät, enintään 2 rinnakkain, kuvakaappaukset vain pakon edessä.
+## Kesken (aalto 4, Run `run_0fb2adc264f9`)
 
-Orcan Run `run_3d6a0d60f5ad` (aalto 1): kaikki dispatchit on ratkaistu, eikä kuittaamattomia viestejä ole. Aallolle 2 luodaan uusi Run.
+- **3D moninpeliin** (Opus): 3D-piirto oikeaan peliin (host, liittyjä, aula, chat), HUD 2D-kerroksena, laatuasetus, `versio.py`:n tuki uusille kansioille, lopuksi `render.js`:n poisto.
+- **Olan yli -demo** (Sonnet, haara `lateepatee/kokeilu3d`): `V` vaihtaa viiston ja olan yli -kameran välillä. Demoa ei mergetä.
 
-## Odottaa omistajaa
+## Seuraavaksi (omistajan kanssa sovittu järjestys)
 
-**Kysymykset (pelitestauksesta):**
-1. Kentän esineet piirtyvät HUDin päälle (arpalaatikko ammusmäärän kohdalla, Varasto). Lisätäänkö HUDiin taustalaatta?
-2. Valaisematon vastustaja näkyy pimeässä himmeänä hahmona (pimeyden peittävyys 0,9–0,95, `render.js` `theme().darkness`). Nimi ja HP ovat piilossa. Onko tämä hyvä, vai pitäisikö vastustajan olla täysin näkymätön?
+- Aalto 5: kenttäelementit 3D:hen (ikkunat, seinäaseet, arpalaatikko, automaatit, tehosteet), ja zombit kiipeämään ikkunoista näyttävästi. Erän tempo (ehdotus 3).
+- Aalto 6: wau-ominaisuudet: tappokamera, tappoloki ja tuntuma, suunnasta kuuluvat äänet, rikottavat lamput.
+- Teemaa muuttavat ideat odottavat omistajan erillistä lupaa: kruunu (ehdotus 8), "varjo paljastaa".
 
-**Ehdotettu aalto 2 (ei vielä hyväksytty):**
-- **Suunnittelija:** kirjoittaa `agentit/ehdotukset.md`:hen 5–10 ideaa (myös yllättäviä, teeman rajoissa). Jokaisesta: perustelu, tiedostot, riski ja mittari. Pohjana simulaattorin havainnot, pelitestaus ja kysymykset yllä. Ei koodaa.
-- **Bottien ostot:** botit käyttämään arpalaatikkoa ja juoma-automaatteja (vain `bot.js`), jotta simulaattorin talousluvut pitävät paikkansa.
+## Omistajan linja
+
+Tavoite on wau-efekti kavereiden kanssa pelatessa: vanhojen pelien nostalgia, hauskanpito ja kilpailu. Inspiraationa ovat PS2-kauhu ja Puppet Combon pelit. Bottien toimivuus ei ole prioriteetti. VHS-tyylissä liika sutu ja kohina ärsyttävät, joten efektit pidetään hillittyinä.
 
 ## Simulaattorin havainnot (eivät ole korjattuja, odottavat päätöstä)
 
@@ -47,5 +48,7 @@ Orcan Run `run_3d6a0d60f5ad` (aalto 1): kaikki dispatchit on ratkaistu, eikä ku
 - **Bypass-tila:** Orca käynnistää Clauden lipulla `--dangerously-skip-permissions`. Varoitus on hyväksytty kerran (`skipDangerousModePermissionPrompt` käyttäjän Claude-asetuksissa). Jos se poistetaan, työntekijät sulkeutuvat heti käynnistyksessä.
 - **Odotus:** `check --wait --types worker_done,...` voi palata myös heartbeatilla. Kuittaa ja odota uudelleen. Viestien rungossa on ääkkösiä ja π-merkkejä, joten Pythonilla tulostettaessa käytä `PYTHONIOENCODING=utf-8`.
 - **Selain:** piilossa oleva Orcan selainpaneeli pyörittää peliä noin 1,5 fps:llä. Kiertotie on kuvattu `pelitestaus.md`:ssä.
-- **Malli:** `worker-start` hyväksyy `--model <id>` (ja `--effort`). Ensimmäisellä Sonnet-työntekijällä pitää tarkistaa (`worker-show`), kelpaako alias `sonnet` vai tarvitaanko koko mallitunnus.
+- **Malli:** `worker-start --model sonnet` toimii (tarkistettu `worker-show`n `launch.effective`-kentästä).
 - `worker-start` voi palauttaa `outcome_unknown`, vaikka työntekijä käynnistyy. Tarkista `worker-show`/`worker-read` ennen uutta yritystä.
+- `check --wait --json` tulostaa ensin `_keepalive`-rivejä ja vasta sitten varsinaisen JSONin: suodata `grep -v _keepalive` ennen jäsentämistä.
+- Selainvälilehdet ovat worktreekohtaisia: `orca tab list --worktree name:<nimi>`.
