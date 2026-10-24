@@ -34,8 +34,8 @@ export const ROUND_END_TIME = 4;     // s erän tuloksen näyttö
 export const GAME_OVER_TIME = 10;    // s lopputuloksen näyttö, sitten lämmittelyyn
 
 // Myrkkysumu (kutistuva alue)
-export const ZONE_DELAY = 10;        // s ennen kuin sumu alkaa sulkeutua
-export const ZONE_SHRINK_TIME = 60;  // s täydestä pienimpään
+export const ZONE_DELAY = 5;         // s ennen kuin sumu alkaa sulkeutua
+export const ZONE_SHRINK_TIME = 30;  // s täydestä pienimpään
 export const ZONE_MIN_R = 110;
 export const ZONE_DPS = 8;           // vahinko/s sumussa
 export const ZONE_DPS_FINAL = 20;    // kun sumu on sulkeutunut kokonaan
@@ -44,14 +44,14 @@ export const ZONE_DPS_FINAL = 20;    // kun sumu on sulkeutunut kokonaan
 export const ZOMBIE_RADIUS = 14;
 export const ZOMBIE_HP = 50;               // +ZOMBIE_HP_PER_LEVEL joka tasolla
 export const ZOMBIE_HP_PER_LEVEL = 15;
-export const ZOMBIE_SPEED = 65;            // px/s, +ZOMBIE_SPEED_PER_LEVEL joka tasolla
+export const ZOMBIE_SPEED = 50;            // px/s, +ZOMBIE_SPEED_PER_LEVEL joka tasolla
 export const ZOMBIE_SPEED_PER_LEVEL = 10;
 export const ZOMBIE_SPEED_MAX = 150;
 export const ZOMBIE_SPRINTER_LEVEL = 3;    // tästä tasosta alkaen osa juoksee
-export const ZOMBIE_DAMAGE = 20;
-export const ZOMBIE_ATTACK_COOLDOWN = 1;   // s
+export const ZOMBIE_DAMAGE = 5; 
+export const ZOMBIE_ATTACK_COOLDOWN = 1;    // s
 export const ZOMBIE_EMERGE_TIME = 0.8;     // s ikkunasta kiipeäminen
-export const ZOMBIE_LEVEL_TIME = 12;       // s erän kestoa per vaikeustaso
+export const ZOMBIE_LEVEL_TIME = 40;       // s erän kestoa per vaikeustaso
 export const ZOMBIE_MAX = 50;
 export const WARMUP_ZOMBIES = 8;
 
