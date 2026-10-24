@@ -3,7 +3,7 @@
 
 import * as THREE from '../../vendor/three-0.170.0/three.module.min.js';
 import { psx } from './post.js';
-import { S } from './arena.js';
+import { HATS, PATTERNS, FACES } from '../appearance.js';
 
 const SKIN = 0xa88462;
 const ZOMBIE_SKIN = 0x6f8a5a;
@@ -22,9 +22,21 @@ const redEye = new THREE.MeshBasicMaterial({ color: 0xff2a1f, fog: false });
 const lampGlow = new THREE.MeshBasicMaterial({ color: 0xffb04a, fog: false });
 const flashlightMat = new THREE.MeshBasicMaterial({ color: 0xfff2c0 });
 
+// Samankokoiset palat jakavat geometrian: zombeja syntyy ja kuolee jatkuvasti, eikä mitään tarvitse vapauttaa.
+const geoCache = new Map();
+function boxGeo(w, h, d, pivotTop) {
+  const key = `${w},${h},${d},${pivotTop}`;
+  let geo = geoCache.get(key);
+  if (!geo) {
+    geo = new THREE.BoxGeometry(w, h, d);
+    if (pivotTop) geo.translate(0, -h / 2, 0); // kääntyy yläpäästä (raaja)
+    geoCache.set(key, geo);
+  }
+  return geo;
+}
+
 function part(w, h, d, color, x, y, z, pivotTop = false) {
-  const geo = new THREE.BoxGeometry(w, h, d);
-  if (pivotTop) geo.translate(0, -h / 2, 0); // kääntyy yläpäästä (raaja)
+  const geo = boxGeo(w, h, d, pivotTop);
   const mesh = new THREE.Mesh(geo, color instanceof THREE.Material ? color : lambert(color));
   mesh.position.set(x, y, z);
   mesh.castShadow = true;
@@ -71,13 +83,100 @@ function humanoid({ skin, cloth, legs, scale = 1, lantern = false }) {
   return { root, parts };
 }
 
-// Pelaaja: väri tulee pelin pelaajaväristä. Taskulamppu käsi suorana eteenpäin.
-export function createPlayerActor(color) {
-  const { root, parts } = humanoid({ skin: SKIN, cloth: new THREE.Color(color).getHex(), legs: 0x2d3340 });
+// Pelaaja: väri tulee pelin pelaajaväristä, päähine, kuvio ja kasvot hahmovalikosta (appearance.js).
+// Taskulamppu käsi suorana eteenpäin.
+export function createPlayerActor(color, look) {
+  const cloth = new THREE.Color(color).getHex();
+  const { root, parts } = humanoid({ skin: SKIN, cloth, legs: 0x2d3340 });
   const lamp = part(0.28, 0.16, 0.16, flashlightMat, 0.3, -0.5, 0);
   parts.armR.add(lamp);
+  addPattern(parts.torso, PATTERNS[look?.pattern]?.id);
+  addHat(parts.head, HATS[look?.hat]?.id, cloth);
+  addFace(parts.head, FACES[look?.face]?.id ?? 'eyes');
   root.scale.setScalar(1.2);
   return { root, parts, walk: 0, kind: 'player' };
+}
+
+// Pää: kuutio 0,34 × 0,34 × 0,32 kohdassa y = 0,12, katse +x-suuntaan. Yläpinta on y = 0,29.
+function addHat(head, hat, cloth) {
+  const add = (...args) => head.add(part(...args));
+  if (hat === 'cap') {
+    add(0.36, 0.08, 0.35, 0xc62828, 0, 0.32, 0);
+    add(0.18, 0.03, 0.3, 0xc62828, 0.24, 0.29, 0);
+  } else if (hat === 'helmet') {
+    add(0.42, 0.14, 0.4, 0x4b5a3a, -0.01, 0.31, 0);
+  } else if (hat === 'beanie') {
+    add(0.37, 0.12, 0.35, 0x1e88e5, -0.01, 0.33, 0);
+    add(0.09, 0.09, 0.09, 0xffffff, -0.02, 0.43, 0);
+  } else if (hat === 'headband') {
+    add(0.37, 0.06, 0.35, 0xe53935, 0, 0.21, 0);
+    add(0.12, 0.04, 0.04, 0xe53935, -0.22, 0.19, 0.06);
+  } else if (hat === 'horns') {
+    for (const z of [-0.13, 0.13]) {
+      const horn = part(0.07, 0.24, 0.07, 0xefe6d2, 0.04, 0.38, z);
+      horn.rotation.x = z > 0 ? 0.5 : -0.5;
+      head.add(horn);
+    }
+  } else if (hat === 'crown') {
+    add(0.3, 0.08, 0.3, 0xffca28, 0, 0.33, 0);
+    for (const [x, z] of [[0.12, 0.12], [0.12, -0.12], [-0.12, 0.12], [-0.12, -0.12]]) add(0.06, 0.1, 0.06, 0xffca28, x, 0.41, z);
+    add(0.06, 0.06, 0.06, cloth, 0.15, 0.33, 0);
+  } else if (hat === 'tophat') {
+    add(0.46, 0.03, 0.44, 0x1a1a1a, 0, 0.3, 0);
+    add(0.28, 0.3, 0.28, 0x2b2b2b, 0, 0.46, 0);
+    add(0.29, 0.05, 0.29, 0x8e1b1b, 0, 0.34, 0);
+  }
+}
+
+function addFace(head, face) {
+  const add = (...args) => head.add(part(...args));
+  if (face === 'eyes' || face === 'angry') {
+    for (const z of [-0.08, 0.08]) {
+      add(0.02, 0.06, 0.06, 0xffffff, 0.175, 0.15, z);
+      add(0.02, 0.03, 0.03, 0x111111, 0.18, 0.15, z);
+    }
+    if (face === 'angry') {
+      for (const z of [-0.08, 0.08]) {
+        const brow = part(0.02, 0.025, 0.09, 0x111111, 0.18, 0.21, z);
+        brow.rotation.x = z > 0 ? 0.4 : -0.4;
+        head.add(brow);
+      }
+    }
+  } else if (face === 'visor') {
+    add(0.03, 0.09, 0.3, 0x1b2733, 0.175, 0.15, 0);
+    add(0.03, 0.02, 0.18, 0x78c8ff, 0.18, 0.17, -0.04);
+  } else if (face === 'mask') {
+    add(0.03, 0.14, 0.33, 0x7a1f1f, 0.175, 0.03, 0);
+    for (const z of [-0.08, 0.08]) add(0.02, 0.05, 0.05, 0xffffff, 0.175, 0.17, z);
+  }
+}
+
+// Torso: 0,34 × 0,62 × 0,56 (syvyys x, korkeus y, leveys z), keskikohta y = 0,31.
+function addPattern(torso, pattern) {
+  const dark = 0x000000;
+  if (pattern === 'stripes') {
+    for (const z of [-0.2, 0, 0.2]) torso.add(part(0.36, 0.62, 0.06, dark, 0, 0, z));
+  } else if (pattern === 'dots') {
+    for (const [y, z] of [[0.18, -0.15], [0.05, 0.12], [-0.12, -0.05], [-0.2, 0.18], [0.2, 0.2]]) {
+      torso.add(part(0.36, 0.07, 0.07, dark, 0, y, z));
+    }
+  } else if (pattern === 'camo') {
+    for (const [y, z, w] of [[0.15, -0.12, 0.2], [-0.05, 0.14, 0.16], [-0.2, -0.08, 0.14]]) {
+      torso.add(part(0.36, w * 0.7, w, 0x26331a, 0, y, z));
+    }
+  }
+  for (const c of torso.children) c.material = patternMat(c.material.color.getHex());
+}
+
+// Kuvio on puoliksi läpinäkyvä tumma kerros, jotta se näkyy kaikilla paidan väreillä.
+const patternMats = new Map();
+function patternMat(color) {
+  let m = patternMats.get(color);
+  if (!m) {
+    m = psx(new THREE.MeshLambertMaterial({ color, transparent: true, opacity: color === 0 ? 0.3 : 0.5 }));
+    patternMats.set(color, m);
+  }
+  return m;
 }
 
 // Zombit saavat satunnaisen yksilöllisen ulkonäön id:n perusteella.
@@ -88,7 +187,7 @@ export function createZombieActor(id) {
   });
   const eyes = new THREE.Group();
   for (const z of [-0.08, 0.08]) {
-    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), redEye);
+    const eye = new THREE.Mesh(boxGeo(0.05, 0.05, 0.05, false), redEye);
     eye.position.set(0.18, 0.18, z);
     eyes.add(eye);
   }
@@ -170,5 +269,3 @@ export function poseBoss(a, boss, moved, t) {
   p.lantern.scale.setScalar(1 + Math.sin(t * 9) * 0.12 + (boss.enraged ? 0.3 : 0));
   p.lantern.material.color.setHex(boss.enraged ? 0xff3d2e : 0xffb04a);
 }
-
-export { S };

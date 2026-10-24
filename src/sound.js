@@ -1,7 +1,7 @@
 // Äänet syntetisoidaan Web Audiolla: ei äänitiedostoja eikä lisenssejä.
 // Äänet tulevat simulaation tapahtumista, ja ne sijoitetaan kameran suhteen (vasen/oikea, etäisyys).
 
-import { camera } from './render.js';
+import { camera } from './render3d/index.js';
 
 let ctx = null;
 let master = null;

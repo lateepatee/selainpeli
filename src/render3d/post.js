@@ -2,7 +2,6 @@
 
 import * as THREE from '../../vendor/three-0.170.0/three.module.min.js';
 
-export const RES_H = 225;                 // piirron korkeus pikseleinä, leveys seuraa ikkunan kuvasuhdetta
 const COLOR_LEVELS = 20;                  // väriportaita per kanava (PS1:n 15-bittinen väri on karkeasti tätä)
 
 // Verteksien nykiminen: kärjet napsahtavat 2 pikselin ruudukkoon, jolloin liikkuvat mallit väpättävät.
@@ -80,7 +79,6 @@ void main() {
 export function createPipeline(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(1);
-  renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const target = new THREE.WebGLRenderTarget(4, 4, {
@@ -105,16 +103,22 @@ export function createPipeline(canvas) {
   quad.frustumCulled = false;
   postScene.add(quad);
 
-  let width = 4;
+  let resH = 225;
 
-  // Piirtopinta pidetään kiinteänä 225 pikselin korkuisena; leveys seuraa ikkunaa, jotta pikselit ovat neliöitä.
+  // Piirtopinnan korkeus on kiinteä (laatutaso, quality.js); leveys seuraa ikkunaa, jotta pikselit ovat neliöitä.
   function resize() {
-    width = Math.max(160, Math.round(RES_H * window.innerWidth / Math.max(1, window.innerHeight)));
-    renderer.setSize(width, RES_H, false);
-    target.setSize(width, RES_H);
-    uniforms.uRes.value.set(width, RES_H);
-    snapUniform.value.set(width / 4, RES_H / 4);
-    return width / RES_H;
+    const width = Math.max(160, Math.round(resH * window.innerWidth / Math.max(1, window.innerHeight)));
+    renderer.setSize(width, resH, false);
+    target.setSize(width, resH);
+    uniforms.uRes.value.set(width, resH);
+    // Napsautusruudukko pysyy samana laadusta riippumatta, jotta nykiminen näyttää kaikilla samalta.
+    snapUniform.value.set((width / resH) * 56, 56);
+    return width / resH;
+  }
+
+  function setResolution(height) {
+    resH = height;
+    return resize();
   }
 
   function render(scene, camera, time, hurt) {
@@ -126,5 +130,5 @@ export function createPipeline(canvas) {
     renderer.render(postScene, postCamera);
   }
 
-  return { renderer, resize, render };
+  return { renderer, resize, setResolution, render };
 }
