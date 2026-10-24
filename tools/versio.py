@@ -1,9 +1,12 @@
 """Päivittää moduulien versiot index.html:ään.
 
 Selain pitää tiedostot välimuistissa (GitHub Pages: 10 min). Jos uusi ja vanha versio sekoittuvat,
-peli ei käynnisty. Siksi jokainen src/-moduuli ladataan import-kartan kautta osoitteella
-src/x.js?v=TIIVISTE, jossa tiiviste lasketaan tiedoston sisällöstä: muuttunut tiedosto saa
-automaattisesti uuden osoitteen, muuttumattomat pysyvät välimuistissa.
+peli ei käynnisty. Siksi jokainen src/-moduuli (myös alikansioissa) ja vendor/-kirjasto ladataan
+import-kartan kautta osoitteella polku.js?v=TIIVISTE, jossa tiiviste lasketaan tiedoston sisällöstä:
+muuttunut tiedosto saa automaattisesti uuden osoitteen, muuttumattomat pysyvät välimuistissa.
+
+Import-kartan avaimet ovat sivun juuresta laskettuja osoitteita, joten myös alikansion moduulin
+suhteellinen tuonti (esim. '../map.js' tiedostosta src/render3d/) osuu samaan avaimeen.
 
 Aja ennen jokaista committia (pre-commit-tarkistus muistuttaa):
 
@@ -20,7 +23,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 INDEX = ROOT / 'index.html'
-SRC = ROOT / 'src'
+# Kansiot, joiden .js-tiedostot selain lataa moduuleina.
+MODULE_DIRS = ['src', 'vendor']
 
 
 def short_hash(path):
@@ -29,9 +33,10 @@ def short_hash(path):
     return hashlib.sha256(data).hexdigest()[:10]
 
 
-versions = {p.name: short_hash(p) for p in sorted(SRC.glob('*.js'))}
+modules = sorted(p for d in MODULE_DIRS for p in (ROOT / d).rglob('*.js'))
+versions = {p.relative_to(ROOT).as_posix(): short_hash(p) for p in modules}
 importmap = json.dumps(
-    {'imports': {f'./src/{m}': f'./src/{m}?v={v}' for m, v in versions.items()}},
+    {'imports': {f'./{m}': f'./{m}?v={v}' for m, v in versions.items()}},
     indent=2, ensure_ascii=False,
 )
 # Selain laskee CSP-tarkistussumman script-elementin sisällöstä sellaisenaan.
@@ -45,7 +50,7 @@ html = re.sub(
     original, flags=re.S,
 )
 html = re.sub(r"'sha256-[A-Za-z0-9+/=]+'", f"'sha256-{digest}'", html)
-html = re.sub(r'src="src/main\.js(\?v=[0-9a-f]+)?"', f'src="src/main.js?v={versions["main.js"]}"', html)
+html = re.sub(r'src="src/main\.js(\?v=[0-9a-f]+)?"', f'src="src/main.js?v={versions["src/main.js"]}"', html)
 
 if '--check' in sys.argv:
     if html != original:
