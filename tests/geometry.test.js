@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { clamp, pointInRect, pushCircleOutOfRect, lineOfSight } from '../src/geometry.js';
+import { clamp, wrapAngle, pointInRect, pushCircleOutOfRect, lineOfSight } from '../src/geometry.js';
 import { setMap, OBSTACLES, ARENA_W, ARENA_H } from '../src/map.js';
 import { MAP_IDS } from '../src/maps.js';
 import { seededRandom } from './apu.js';
@@ -22,6 +22,41 @@ test('clamp rajaa arvon välille', () => {
   assert.equal(clamp(-5, 0, 10), 0);
   assert.equal(clamp(15, 0, 10), 10);
   assert.equal(clamp(7, 0, 10), 7);
+});
+
+test('wrapAngle palauttaa kulman välillä [-π, π] samaan suuntaan', () => {
+  // Välillä olevat kulmat palautuvat täsmälleen sellaisinaan.
+  for (const a of [0, 1, -1, Math.PI, -Math.PI, 3.14, -3.14]) assert.equal(wrapAngle(a), a);
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-12, `${a} vs ${b}`);
+  near(wrapAngle(Math.PI + 0.5), -Math.PI + 0.5);
+  near(wrapAngle(-Math.PI - 0.5), Math.PI - 0.5);
+  near(wrapAngle(4 * Math.PI + 1), 1);
+  near(wrapAngle(-6 * Math.PI - 1), -1);
+  // Kohtuulliset arvot säilyttävät suuntansa.
+  for (const a of [7, -7, 100, -1000]) {
+    const w = wrapAngle(a);
+    assert.ok(Math.abs(Math.cos(w) - Math.cos(a)) < 1e-9 && Math.abs(Math.sin(w) - Math.sin(a)) < 1e-9, `${a} → ${w}`);
+  }
+  // Valtavat arvot eivät jumita, ja tulos on välillä. Suunta ei säily, koska liukulukujen 2π ei ole
+  // tarkka 2π, mutta niin suurella kulmalla ei ole suuntaakaan.
+  for (const a of [1e300, -1e300, 1e20, -1e20, Number.MAX_VALUE, -Number.MAX_VALUE]) {
+    const w = wrapAngle(a);
+    assert.ok(w >= -Math.PI && w <= Math.PI, `${a} → ${w}`);
+  }
+  for (const a of [Infinity, -Infinity, NaN]) assert.equal(wrapAngle(a), 0, String(a));
+});
+
+test('wrapAngle laskee samoin kuin vanha silmukka tavallisilla erotuksilla', () => {
+  const loop = (a) => {
+    while (a > Math.PI) a -= Math.PI * 2;
+    while (a < -Math.PI) a += Math.PI * 2;
+    return a;
+  };
+  const rand = seededRandom(7);
+  for (let i = 0; i < 10000; i++) {
+    const a = (rand() - 0.5) * 6 * Math.PI;
+    assert.equal(wrapAngle(a), loop(a), String(a));
+  }
 });
 
 test('pointInRect: reunat eivät kuulu sisään, pad laajentaa', () => {

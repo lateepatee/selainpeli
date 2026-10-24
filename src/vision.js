@@ -2,6 +2,7 @@
 // ja boteille, jotta botit eivät näe pimeässä paremmin kuin ihmiset.
 
 import { LAMPS } from './map.js';
+import { wrapAngle } from './geometry.js';
 
 export const AURA_RADIUS = 110;            // valopiiri pelaajan ympärillä
 export const FLASHLIGHT_RANGE = 440;       // taskulampun keilan pituus
@@ -16,9 +17,7 @@ export function isLitFor(obs, aim, x, y) {
   const d = Math.hypot(dx, dy);
   if (d < AURA_RADIUS + 10) return true;
   if (d < FLASHLIGHT_RANGE) {
-    let a = Math.atan2(dy, dx) - aim;
-    while (a > Math.PI) a -= Math.PI * 2;
-    while (a < -Math.PI) a += Math.PI * 2;
+    const a = wrapAngle(Math.atan2(dy, dx) - aim);
     if (Math.abs(a) < FLASHLIGHT_HALF_ANGLE * 1.15) return true;
   }
   return LAMPS.some((l) => Math.hypot(x - l.x, y - l.y) < l.r * 0.6);

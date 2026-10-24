@@ -11,6 +11,7 @@
 //                    { type: 'chat', name, color, text, system }
 
 import { PERK_IDS } from './weapons.js';
+import { wrapAngle } from './geometry.js';
 
 export const PEER_PREFIX = 'areena-peli-v8-';
 export const MAX_PLAYERS = 6;
@@ -55,7 +56,7 @@ export function decodeSnapshot(msg) {
   const players = {};
   for (const a of msg.p) {
     players[a[0]] = {
-      id: a[0], name: a[1], color: a[2], x: a[3], y: a[4], aim: a[5], hp: a[6],
+      id: a[0], name: a[1], color: a[2], x: a[3], y: a[4], aim: wrapAngle(Number(a[5])), hp: a[6],
       alive: a[7] === 1, respawnTimer: a[8], kills: a[9], deaths: a[10], ack: a[11],
       score: a[12], wins: a[13], killedBy: a[14], zombieKills: a[15],
       ...decodeLoadout(a, 16),
@@ -121,11 +122,12 @@ export function sanitizeInput(i) {
   if (!i || typeof i !== 'object') return null;
   const seq = Number(i.seq);
   if (!Number.isInteger(seq) || seq < 0) return null;
-  const aim = Number(i.aim);
+  // Vieras voi lähettää minkä tahansa luvun, joten kulma rajataan, ettei se riko kulmalaskuja muualla.
+  const aim = wrapAngle(Number(i.aim));
   return {
     seq,
     up: !!i.up, down: !!i.down, left: !!i.left, right: !!i.right,
-    aim: Number.isFinite(aim) ? aim : 0,
+    aim,
     shoot: !!i.shoot,
     reload: !!i.reload,
     interact: !!i.interact,
