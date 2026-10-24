@@ -11,6 +11,7 @@ import {
 import { startHost } from './host.js';
 import { startClient } from './client.js';
 import { sanitizeName } from './protocol.js';
+import { readTestConfig } from './testitila.js';
 import { initAudio, toggleMute, isMuted } from './sound.js';
 
 // Pelinäkymä piirretään WebGL:llä (#game), HUD ja tekstit 2D-kerrokselle sen päällä (#hud).
@@ -338,3 +339,6 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// Testitila (viimeisenä, jotta kaikki moduulin tila on alustettu): botit-parametri käynnistää hostauksen ja pelin ilman aulaa.
+if (readTestConfig()?.botit) hostBtn.click();

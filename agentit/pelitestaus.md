@@ -287,3 +287,33 @@ Pelistä löytyi kaksi asiaa, jotka eivät ole selviä bugeja mutta kannattaa n�
 2. **Pelaajat erottuvat pimeässä himmeinä.** Pimeyskerroksen peittävyys on 0,9–0,95 (`render.js`, `theme().darkness`), joten Hautausmaalla valaisematon vastustaja näkyi kuvassa heikkona sinisenä hahmona, vaikka nimi ja HP oli oikein piilotettu. Tämä on luultavasti tarkoituksellista, mutta se koskee teemaa ("vastustaja pimeässä on näkymätön"), joten omistaja päättää.
 
 Lisäksi: Botti tappoi paikallaan seisovan liittyjän noin 2 s lähtölaskennan jälkeen. Tämä on odotettua pelattavuutta eikä bugi, mutta siksi testit tehdään lämmittelyssä.
+
+## Testitila: myöhäinen peli ja bossi ilman koko ottelua
+
+`src/testitila.js` vie hostin suoraan myöhäiseen peliin. Se aktivoituu vain, kun sivu on osoitteessa `localhost` tai `127.0.0.1` ja osoitteessa on `?testi=1`; julkisella Pagesilla parametreja ei lueta lainkaan, eikä liittyjä voi vaikuttaa niihin. Ruudun oikeassa alakulmassa näkyy keltainen `TESTITILA`-teksti ja käytössä olevat parametrit.
+
+| Parametri | Vaikutus |
+|---|---|
+| `era=N` | peli alkaa erästä N; zombien määrä ja taso vastaavat sitä |
+| `raha=N` tai `raha=max` | kaikille pelaajille rahaa (enintään `MONEY_CAP`) |
+| `bossi=1` | Lyhtymies ilmestyy heti, kun erä alkaa (lähtölaskennan jälkeen) |
+| `kentta=<id>` | ensimmäisen erän kenttä (`bunker`, `manor`, `graveyard`, `warehouse`); seuraavat erät arvotaan normaalisti |
+| `nopeus=1..8` | simulaatio N kertaa nopeammin |
+| `botit=N` | huone täytetään N botilla (0–5) ja ottelu alkaa automaattisesti ilman aulaa |
+| `katsele=1` | myös host on botti; kamera seuraa elossa olevaa ja vaihtuu kuoleman jälkeen. Pelaajia on siis `botit`+1 |
+
+Rajoitukset: `era` ja `bossi` toimivat vain, kun ottelu alkaa `botit`-parametrilla. `bossi=1` asettaa sumun kellon bossin syntyaikaan (15 s), joten zombien taso on hieman korkeampi kuin pelkällä `era`lla. Bossi ei synny alle kahdella elossa olevalla.
+
+Tila luetaan konsolista: `__testi()` palauttaa `world`-olion (vain testitilassa). Esimerkki:
+
+```sh
+orca eval --page $P --expression "(w => JSON.stringify({round: w.round, zombies: w.zombies.length, boss: w.boss && {hp: w.boss.hp, state: w.boss.state}}))(__testi())" --json
+orca exec --page $P --command "errors" --json
+```
+
+Esimerkkiosoitteet (palvelin kuten kohdassa 1, portti omasi):
+- Myöhäinen peli ja bossi, pelkät botit: `http://localhost:8000/?testi=1&era=8&bossi=1&botit=3&katsele=1&nopeus=4`
+- Ostokset: `http://localhost:8000/?testi=1&era=6&raha=max&botit=2` (pelaa itse, paljon rahaa)
+- Tietty kenttä: `http://localhost:8000/?testi=1&botit=3&kentta=manor`
+
+Tahdistin (`tahdista`) kannattaa ajaa, koska piilossa oleva paneeli antaa vain ~1,5 ruutua sekunnissa. Pienennä `nopeus` arvoon 1–2, jos haluat ottaa kuvakaappauksen tietystä hetkestä.
