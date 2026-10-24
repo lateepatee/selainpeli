@@ -17,7 +17,9 @@ Päivitetty 2026-10-24. Koordinaattori päivittää tämän jokaisen aallon lopu
 | Tähtäysbugin korjaus | `lateepatee/tahtayskorjaus` | Vieras pystyi jäädyttämään pelin `aim: 1e300`:lla. Nyt `wrapAngle` (`geometry.js`) |
 | Selainpelitestaus | `lateepatee/pelitestaus` | Ohje `agentit/pelitestaus.md`, ajettu kerran läpi |
 
-Worktreet (`orca/workspaces/selainpeli/` käyttäjän kotikansiossa: `simulaattori`, `testit`, `tahtayskorjaus`, `pelitestaus`) ovat kaikki mergetty, ja niiden työntekijät on vapautettu. Ne voi poistaa Orcasta, ja myös haarat voi poistaa (`git branch -d`).
+Aallon 1 worktreet ja haarat on poistettu (`orca worktree rm`). Mainin lisäksi ei ole muita worktreitä.
+
+Uudet tokenisäännöt ovat `koordinaattori.md`:ssä: Sonnet-työntekijät, enintään 2 rinnakkain, kuvakaappaukset vain pakon edessä.
 
 Orcan Run `run_3d6a0d60f5ad` (aalto 1): kaikki dispatchit on ratkaistu, eikä kuittaamattomia viestejä ole. Aallolle 2 luodaan uusi Run.
 
@@ -45,4 +47,5 @@ Orcan Run `run_3d6a0d60f5ad` (aalto 1): kaikki dispatchit on ratkaistu, eikä ku
 - **Bypass-tila:** Orca käynnistää Clauden lipulla `--dangerously-skip-permissions`. Varoitus on hyväksytty kerran (`skipDangerousModePermissionPrompt` käyttäjän Claude-asetuksissa). Jos se poistetaan, työntekijät sulkeutuvat heti käynnistyksessä.
 - **Odotus:** `check --wait --types worker_done,...` voi palata myös heartbeatilla. Kuittaa ja odota uudelleen. Viestien rungossa on ääkkösiä ja π-merkkejä, joten Pythonilla tulostettaessa käytä `PYTHONIOENCODING=utf-8`.
 - **Selain:** piilossa oleva Orcan selainpaneeli pyörittää peliä noin 1,5 fps:llä. Kiertotie on kuvattu `pelitestaus.md`:ssä.
+- **Malli:** `worker-start` hyväksyy `--model <id>` (ja `--effort`). Ensimmäisellä Sonnet-työntekijällä pitää tarkistaa (`worker-show`), kelpaako alias `sonnet` vai tarvitaanko koko mallitunnus.
 - `worker-start` voi palauttaa `outcome_unknown`, vaikka työntekijä käynnistyy. Tarkista `worker-show`/`worker-read` ennen uutta yritystä.

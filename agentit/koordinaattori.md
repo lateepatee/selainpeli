@@ -20,11 +20,23 @@ Lisäksi:
 - Uusia ideoita ei toteuteta ilman hyväksyntää. Kirjaa ne `agentit/ehdotukset.md`:hen.
 - Et koskaan pushaa (`git push`). Omistaja pushaa itse.
 
+## Tokenisäännöt
+
+Aalto 1 kulutti noin 32 M tokenia, ja suurin osa siitä oli turhaa. Siksi:
+
+1. Työntekijät ajetaan Sonnetilla (`worker-start --model sonnet`), ellei tehtävä ole oikeasti vaikea arkkitehtuurityö. Koordinaattori voi olla Opus.
+2. Yksi rajattu tehtävä per työntekijä. Kun työ on mergetty, vapauta työntekijä (`worker-release`) ja poista worktree (`orca worktree rm`). Työntekijä ei jää odottamaan uusia tehtäviä.
+3. Korkeintaan 2 työntekijää rinnakkain.
+4. Tehtävänannot lyhyiksi: tavoite, relevantit tiedostot ja valmis-kriteeri. Ei projektin historiaa, koska CLAUDE.md latautuu työntekijälle itsestään.
+5. Selaintestauksessa käytetään `orca snapshot`ia, konsolilokeja ja tekstimuotoisia tarkistuksia. Kuvakaappaus otetaan vain, kun visuaalinen tarkistus on pakko tehdä, ja silloinkin pienestä ikkunasta. Yksi kuvakaappaus on noin 100 k merkkiä ja jää kontekstiin pysyvästi. Sama sääntö kirjoitetaan selaintestaavan työntekijän tehtävänantoon.
+6. Orkestrointiviestit käsitellään kaikki kerralla yhdellä `check`illä ja kuitataan lyhyesti. Ylimääräisiä statuskyselyitä ei tehdä.
+7. Raportit omistajalle lyhyesti: mikä valmistui, mikä on kesken, tarvitaanko häneltä päätös.
+
 ## Työnkulku
 
 1. Tarkista, että `CLAUDE.md`, `package.json` ja `agentit/` ovat commitoitu mainiin. Työntekijöiden worktreet haarautuvat commitoidusta tilasta, joten commitoimaton ohje ei näy niille.
 2. Luo Run aallolle ja esitä tehtävät (portti 1).
-3. Käynnistä hyväksytyt tehtävät rinnakkain: jokainen omaan worktreehen (`--worktree new-child`, kuvaava `--name`, `--base-branch main`), `--agent claude`. Tehtäväkuvaus annetaan sellaisenaan alta, ja se on itsenäinen: työntekijä ei näe tätä keskustelua.
+3. Käynnistä hyväksytyt tehtävät (enintään 2 rinnakkain): jokainen omaan worktreehen (`--worktree new-child`, kuvaava `--name`, `--base-branch main`), `--agent claude --model sonnet`. Tehtäväkuvaus annetaan sellaisenaan alta, ja se on itsenäinen: työntekijä ei näe tätä keskustelua.
 4. Odota ja käsittele viestit oppaan silmukan mukaisesti.
 5. Valmistunut tehtävä: tarkista hyväksymisehdot itse (aja testit/komennot), sitten portti 2. Hyväksytyn työn mergeät mainiin (`git merge --no-ff <haara>`), ratkaiset `index.html`:n konfliktit ajamalla `python tools/versio.py`, nostat `PEER_PREFIX`:in jos työntekijä raportoi protokollamuutoksen, ja ajat testit mainissa.
 6. Aallon lopuksi raportti omistajalle: mitä valmistui, mitä jäi, ja ehdotus seuraavaksi aalloksi. Odota hyväksyntää ennen uutta aaltoa.
