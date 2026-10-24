@@ -4,7 +4,7 @@ Päivitetty 2026-10-24. Koordinaattori päivittää tämän jokaisen aallon lopu
 
 ## Lyhyesti
 
-- **Aalto 4 valmis: peli on 3D:nä mainissa** (`src/render3d/`, 2D poistettu). Suunta: (Three.js 0.170.0, `vendor/`, omistajan hyväksymä pysyvästi). 2D-piirto (`render.js`) poistuu, eikä varaversiota jätetä.
+- **Aalto 4 valmis: peli on 3D:nä mainissa** (`src/render3d/`, Three.js 0.170.0 `vendor/`-kansiossa, omistajan hyväksymä pysyvästi). 2D-piirto on poistettu, eikä varaversiota ole.
 - **Kamera: viisto** (omistajan päätös ainakin alkuun). Olan yli -demo on haarassa `lateepatee/kokeilu3d` (ei mergetä); se voi palata erämuuttujana (ehdotus 9). Aaltoon 5: viiston kameran elävöitys (matalammalle vaarassa, tähtäyksen ennakointi, tärähdys).
 - Main on origin/mainia edellä, eikä mitään ole pushattu. Omistaja pushaa itse.
 
