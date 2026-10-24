@@ -4,7 +4,7 @@ Päivitetty 2026-10-24. Koordinaattori päivittää tämän jokaisen aallon lopu
 
 ## Lyhyesti
 
-- **Suunta on päätetty: peli siirtyy 3D:hen** (Three.js 0.170.0, `vendor/`, omistajan hyväksymä pysyvästi). 2D-piirto (`render.js`) poistuu, eikä varaversiota jätetä.
+- **Aalto 4 valmis: peli on 3D:nä mainissa** (`src/render3d/`, 2D poistettu). Suunta: (Three.js 0.170.0, `vendor/`, omistajan hyväksymä pysyvästi). 2D-piirto (`render.js`) poistuu, eikä varaversiota jätetä.
 - **Kamera: viisto** (omistajan päätös ainakin alkuun). Olan yli -demo on haarassa `lateepatee/kokeilu3d` (ei mergetä); se voi palata erämuuttujana (ehdotus 9). Aaltoon 5: viiston kameran elävöitys (matalammalle vaarassa, tähtäyksen ennakointi, tärähdys).
 - Main on origin/mainia edellä, eikä mitään ole pushattu. Omistaja pushaa itse.
 
@@ -19,10 +19,10 @@ Päivitetty 2026-10-24. Koordinaattori päivittää tämän jokaisen aallon lopu
 
 2D-grafiikkakokeilut (korkeat seinät, VHS) hylättiin, ja niiden haarat poistettiin. VHS-arvot ovat tallessa `ehdotukset.md`:ssä.
 
-## Kesken (aalto 4, Run `run_0fb2adc264f9`)
+## Aalto 4 (valmis, Run `run_0fb2adc264f9`)
 
-- **3D moninpeliin** (Opus): 3D-piirto oikeaan peliin (host, liittyjä, aula, chat), HUD 2D-kerroksena, laatuasetus, `versio.py`:n tuki uusille kansioille, lopuksi `render.js`:n poisto.
-- Olan yli -demo valmis ja pelattu: viisto toimi paremmin. Huom: olan yli vaatisi simulaatioon ja verkkoon tarkan liikesuunnan (nyt 8 suuntaa).
+- 3D moninpeliin (Opus): mainissa. Kenttäelementit ovat vielä yksinkertaisia (ikkunat, seinäaseet, arpalaatikko, automaatit, tehosteet), veriläiskät puuttuvat. fps mitattu vain RTX 5080:llä.
+- Olan yli -demo valmis ja pelattu: viisto toimi paremmin. Haara `lateepatee/kokeilu3d` jää talteen (ei mergetä). Olan yli vaatisi simulaatioon ja verkkoon tarkan liikesuunnan (nyt 8 suuntaa).
 
 ## Seuraavaksi (omistajan kanssa sovittu järjestys)
 
@@ -31,6 +31,8 @@ Päivitetty 2026-10-24. Koordinaattori päivittää tämän jokaisen aallon lopu
 - Teemaa muuttavat ideat odottavat omistajan erillistä lupaa: kruunu (ehdotus 8), "varjo paljastaa".
 
 ## Omistajan linja
+
+Omistaja ei jaksa testata yksin isoja kokonaisuuksia, varsinkaan myöhäistä peliä. Agenttien pitää todentaa itse (testitila, simulaattori), ja omistaja ajaa pelin sisään kavereiden kanssa.
 
 Tavoite on wau-efekti kavereiden kanssa pelatessa: vanhojen pelien nostalgia, hauskanpito ja kilpailu. Inspiraationa ovat PS2-kauhu ja Puppet Combon pelit. Bottien toimivuus ei ole prioriteetti. VHS-tyylissä liika sutu ja kohina ärsyttävät, joten efektit pidetään hillittyinä.
 
