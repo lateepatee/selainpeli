@@ -12,6 +12,7 @@ import {
   PEER_PREFIX, MAX_PLAYERS, SNAPSHOT_EVERY,
   encodeSnapshot, sanitizeName, sanitizeInput, randomRoomCode,
 } from './protocol.js';
+import { readTestConfig, applyTestState, startMatchOnMap, showBadge } from './testitila.js';
 
 const HOST_ID = 'host';
 const CLIENT_TIMEOUT = 5000;  // ms ilman viestejä -> pelaaja poistetaan
@@ -23,6 +24,10 @@ const CHAT_WINDOW = 5000;     // ... näin monessa millisekunnissa
 const LOOK_INTERVAL = 250;    // ms: hahmon muutoksia korkeintaan näin usein
 
 export function startHost({ name, bots, look, targetScore, onRoom, onStatus }) {
+  const test = readTestConfig();
+  if (test?.botit != null) bots = test.botit;
+  const removeBadge = test ? showBadge(test) : null;
+  const speed = test?.nopeus ?? 1;
   const world = createWorld();
   setTargetScore(world, targetScore);
   const myLook = sanitizeLook(look);
@@ -44,6 +49,15 @@ export function startHost({ name, bots, look, targetScore, onRoom, onStatus }) {
   let netError = null;
 
   openPeer();
+
+  // Testitilassa world luettavissa konsolista: __testi()
+  if (test) globalThis.__testi = () => world;
+
+  if (test?.botit) {
+    // Testitila: ottelu alkaa heti. Katselussa myös host on botti, jolloin kamera seuraa elossa olevaa.
+    startMatchOnMap(startMatch, world, test.kentta);
+    applyTestState(world, test);
+  }
 
   function openPeer() {
     const code = randomRoomCode();
@@ -223,7 +237,7 @@ export function startHost({ name, bots, look, targetScore, onRoom, onStatus }) {
 
   // visible = välilehti näkyvissä. Piilossa efektejä ja ääniä ei kerätä.
   function tickOnce(visible) {
-    const inputs = { [HOST_ID]: readInput(me, screenToWorld) };
+    const inputs = { [HOST_ID]: test?.katsele ? botInput(world, HOST_ID, TICK) : readInput(me, screenToWorld) };
     for (const id of botIds) inputs[id] = botInput(world, id, TICK);
     for (const c of clients.values()) {
       // Yksi syöte per tick. Jos seuraava syöte ei ole vielä perillä, pelaaja odottaa tämän
@@ -276,7 +290,7 @@ export function startHost({ name, bots, look, targetScore, onRoom, onStatus }) {
   return {
     // Pelilogiikka ja verkko: ajetaan myös välilehden ollessa piilossa (main.js).
     update(dt, visible) {
-      acc += dt;
+      acc += dt * speed;
       while (acc >= TICK) {
         tickOnce(visible);
         acc -= TICK;
@@ -313,9 +327,11 @@ export function startHost({ name, bots, look, targetScore, onRoom, onStatus }) {
     debug: () => ({ world, clients }),
     destroy() {
       destroyed = true;
+      removeBadge?.();
       for (const c of clients.values()) c.conn.close();
       peer?.destroy();
       for (const id of botIds) forgetBot(id);
+      if (test?.katsele) forgetBot(HOST_ID);
     },
   };
 }
