@@ -73,7 +73,7 @@ test('kattolampun alla on valoisaa kaukanakin', () => {
 
 // Regressio: valtava tähtäyskulma (esim. 1e300) jumitti isLitForin while-silmukan, ja render.js
 // kutsuu sitä seurattavan pelaajan aimilla. Ajetaan erillisessä prosessissa aikarajalla,
-// ettei testisarja jää jumiin, jos vika palaa.
+// ettei testisarja jää jumiin, jos vika palaa. Raja on väljä, koska kuormitettuna pelkkä Noden käynnistys voi kestää yli 2 s.
 test('isLitFor päättyy millä tahansa sanitizeInputin hyväksymällä kulmalla', () => {
   const code = [
     "import { sanitizeInput } from './src/protocol.js';",
@@ -85,6 +85,6 @@ test('isLitFor päättyy millä tahansa sanitizeInputin hyväksymällä kulmalla
     'isLitFor({ x: 0, y: 0 }, -1e300, 300, 0);',
     "console.log('ok');",
   ].join('\n');
-  const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: ROOT, encoding: 'utf8', timeout: 2000 });
-  assert.equal(r.stdout.trim(), 'ok', 'isLitFor ei palannut kahdessa sekunnissa');
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: ROOT, encoding: 'utf8', timeout: 30000 });
+  assert.equal(r.stdout.trim(), 'ok', 'isLitFor ei palannut 30 sekunnissa');
 });
