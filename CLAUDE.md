@@ -10,7 +10,7 @@ Nämä ovat pelin ydin. Niitä ei muuteta ilman projektin omistajan erillistä l
 - **Pimeys ja valo:** näkyvyys on rajattu, lamput ja taskulamppu ratkaisevat. Vastustaja pimeässä on näkymätön.
 - **Kaikki vastaan kaikki:** erän viimeinen eloonjäänyt voittaa, erässä ei synnytä uudelleen.
 - **Zombit kiipeävät ikkunoista** ja myrkkysumu kaventaa kenttää, joten paikallaan ei voi pysyä.
-- **Selainpeli ilman asennuksia:** pelkkä JavaScript ja Canvas, ei riippuvuuksia, ei käännösvaihetta, ei palvelinta. Moninpeli P2P:nä (PeerJS), host ajaa pelin.
+- **Selainpeli ilman asennuksia:** pelaaja avaa linkin (GitHub Pages) ja pelaa, eikä mitään asenneta. Peli on staattisia tiedostoja: ei käännösvaihetta, ei omaa palvelinta. Moninpeli P2P:nä (PeerJS), host ajaa pelin. Kirjastoja saa käyttää vain alla olevin ehdoin (Kirjastot).
 - **Suomenkielinen** käyttöliittymä, kommentit ja commit-viestit.
 
 Muuten saa ehdottaa rohkeasti, yllättäviäkin asioita. **Jokainen uusi ominaisuus ja isompi muutos hyväksytetään ensin omistajalla** (koordinaattorin kautta). Agentti ei laajenna tehtäväänsä omin päin, vaan kirjaa ideat ehdotuksiksi.
@@ -34,7 +34,17 @@ Muuten saa ehdottaa rohkeasti, yllättäviäkin asioita. **Jokainen uusi ominais
 - **Ennen committia:** `python tools/versio.py` (pre-commit-tarkistus vaatii sen). Jos `index.html`:n import-kartta menee mergessä ristiin, ota kumpi tahansa versio ja aja `python tools/versio.py` uudelleen: tiedosto lasketaan sisällöstä.
 - Pre-commit hylkää myös rivit, joissa on käyttäjän kotikansioon osoittavia absoluuttisia polkuja tai sähköpostiosoitteita. Käytä suhteellisia polkuja.
 - Commit-viestit suomeksi, lyhyt otsikko kuten aiemmissa.
-- **Ei koskaan:** `git push` (repo on julkinen ja main näkyy suoraan pelaajille), uusia riippuvuuksia tai npm-paketteja, ulkoisia palveluita, `--no-verify`.
+- **Ei koskaan:** `git push` (repo on julkinen ja main näkyy suoraan pelaajille), npm-paketteja tai kirjastoja ohi Kirjastot-osion, ulkoisia palveluita, `--no-verify`.
+
+## Kirjastot
+
+Repo on julkinen ja peli näkyy kaikille Pagesin kautta, joten jokainen vieras tiedosto on koodia, jota pelaajien selain ajaa. Kirjasto on sallittu vain, jos kaikki ehdot täyttyvät:
+
+- **Omistaja hyväksyy sen ensin** (koordinaattorin kautta) ja tietää, mitä kirjasto tuo ja paljonko se painaa.
+- **Vain selaimen puolelle**, esimerkiksi piirtoon tai ääneen. Simulaatiomoduulit ja testit pysyvät ilman kirjastoja, jotta ne toimivat Nodessa sellaisenaan.
+- **Valmis selaintiedosto, ei asennusta eikä käännöstä.** Ensisijaisesti kopioidaan repoon `vendor/`-kansioon lukitulla versiolla, lisenssitiedostoineen (MIT, BSD, Apache tai vastaava). Tällöin CSP:n `'self'` riittää eikä CDN:n muutos voi vaikuttaa peliin. Jos tiedosto ladataan CDN:stä, versio on lukittu ja `integrity`-tarkistussumma pakollinen, kuten PeerJS:llä `index.html`:ssä.
+- **CSP (`index.html`) avataan vain niin paljon kuin on pakko**, esimerkiksi yksi tarkka CDN-osoite. Uusia yhteysosoitteita (`connect-src`) ei lisätä.
+- Kirjasto ja sen versio kirjataan README.md:hen, jotta päivitys on tietoinen päätös.
 
 ## Testaus
 
