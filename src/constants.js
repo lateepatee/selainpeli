@@ -44,14 +44,14 @@ export const ZONE_DPS_FINAL = 20;    // kun sumu on sulkeutunut kokonaan
 export const ZOMBIE_RADIUS = 14;
 export const ZOMBIE_HP = 50;               // +ZOMBIE_HP_PER_LEVEL joka tasolla
 export const ZOMBIE_HP_PER_LEVEL = 15;
-export const ZOMBIE_SPEED = 50;            // px/s, +ZOMBIE_SPEED_PER_LEVEL joka tasolla
+export const ZOMBIE_SPEED = 58;            // px/s, +ZOMBIE_SPEED_PER_LEVEL joka tasolla
 export const ZOMBIE_SPEED_PER_LEVEL = 10;
 export const ZOMBIE_SPEED_MAX = 150;
 export const ZOMBIE_SPRINTER_LEVEL = 3;    // tästä tasosta alkaen osa juoksee
-export const ZOMBIE_DAMAGE = 5; 
+export const ZOMBIE_DAMAGE = 12;
 export const ZOMBIE_ATTACK_COOLDOWN = 1;    // s
 export const ZOMBIE_EMERGE_TIME = 0.8;     // s ikkunasta kiipeäminen
-export const ZOMBIE_LEVEL_TIME = 40;       // s erän kestoa per vaikeustaso
+export const ZOMBIE_LEVEL_TIME = 25;       // s erän kestoa per vaikeustaso
 export const ZOMBIE_MAX = 50;
 export const WARMUP_ZOMBIES = 8;
 
