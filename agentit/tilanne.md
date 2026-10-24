@@ -24,9 +24,15 @@ Päivitetty 2026-10-24. Koordinaattori päivittää tämän jokaisen aallon lopu
 - 3D moninpeliin (Opus): mainissa. Kenttäelementit ovat vielä yksinkertaisia (ikkunat, seinäaseet, arpalaatikko, automaatit, tehosteet), veriläiskät puuttuvat. fps mitattu vain RTX 5080:llä.
 - Olan yli -demo valmis ja pelattu: viisto toimi paremmin. Haara `lateepatee/kokeilu3d` jää talteen (ei mergetä). Olan yli vaatisi simulaatioon ja verkkoon tarkan liikesuunnan (nyt 8 suuntaa).
 
+## Aalto 5A (valmis, Run `run_ffcfca9d017e`)
+
+- Testitila: `?testi=1&era=8&bossi=1&botit=3&katsele=1&nopeus=4` (vain localhost, ohje `pelitestaus.md`).
+- Erän tempo: sumu 5 s + 30 s, bossi 8 s, zombit maltillisemmiksi (vahinko 12, nopeus 58, tasoväli 25 s). Simulaattori: erän mediaani 21 → 32 s, pelaajien tappamat 12 → 24 %, sumu 0,2 → 9 %. Omistaja hioo arvot kaveritestien mukaan.
+- **Satunnaisesti kaatuva testi:** `npm test` kaatui kahdesti yhdellä testillä, mutta ei toistunut 12 uusinnassa. Selvitettävä (pieni tehtävä).
+
 ## Seuraavaksi (omistajan kanssa sovittu järjestys)
 
-- Aalto 5: kenttäelementit 3D:hen (ikkunat, seinäaseet, arpalaatikko, automaatit, tehosteet), ja zombit kiipeämään ikkunoista näyttävästi. Erän tempo (ehdotus 3).
+- Aalto 5B: kenttäelementit 3D:hen (ikkunat, seinäaseet, arpalaatikko, automaatit, tehosteet, veriläiskät), zombit kiipeämään ikkunoista näyttävästi, viiston kameran elävöitys. Todennetaan testitilalla.
 - Aalto 6: wau-ominaisuudet: tappokamera, tappoloki ja tuntuma, suunnasta kuuluvat äänet, rikottavat lamput.
 - Teemaa muuttavat ideat odottavat omistajan erillistä lupaa: kruunu (ehdotus 8), "varjo paljastaa".
 
