@@ -28,11 +28,26 @@ Päivitetty 2026-10-24. Koordinaattori päivittää tämän jokaisen aallon lopu
 
 - Testitila: `?testi=1&era=8&bossi=1&botit=3&katsele=1&nopeus=4` (vain localhost, ohje `pelitestaus.md`).
 - Erän tempo: sumu 5 s + 30 s, bossi 8 s, zombit maltillisemmiksi (vahinko 12, nopeus 58, tasoväli 25 s). Simulaattori: erän mediaani 21 → 32 s, pelaajien tappamat 12 → 24 %, sumu 0,2 → 9 %. Omistaja hioo arvot kaveritestien mukaan.
-- **Satunnaisesti kaatuva testi:** `npm test` kaatui kahdesti yhdellä testillä, mutta ei toistunut 12 uusinnassa. Selvitettävä (pieni tehtävä).
+
+## Aalto 5B (valmis, Run `run_6d2e009fe8e2`)
+
+- Kenttä 3D:hen: ikkunoista kiipeävät zombit ja repeävät laudat (`render3d/windows.js`), ostopaikat esineinä (`props.js`), tehosteet (`pickups.js`), veriläiskät (`decals.js`), elävä kamera (`camera.js`).
+- Satunnainen testi korjattu: `tests/vision.test.js`:n alaprosessin aikaraja 2 s → 30 s (kuormassa Noden käynnistys > 2 s).
+- Työntekijät ylittävät kuvakaappausrajan (8 vs. 4), koska testitilassa kamera ei kohdistu haluttuun paikkaan. Seuraavaan tehtävään: testitilaan kamerakomento (esim. `__testi.kamera(x, y)`) tai tekstimuotoinen tarkistus.
+
+## Kaveritesti (odottaa omistajaa)
+
+Omistaja pushaa mainin (35 committia origin/mainia edellä) ja pelaa kavereiden kanssa Pagesin kautta. Katsottavaa:
+1. Pyöriikö peli kaverien koneilla? Laatuasetus aulassa, `?fps=1` näyttää ruudun keston.
+2. Erän pituus ja tunnelma: tuleeko sumu ja bossi sopivasti, ovatko zombit liian helppoja tai vaikeita?
+3. Ikkunasta kiipeävät zombit: erottuuko kiipeäminen pimeässä?
+4. Kamera: onko vaaran lähestyminen ja tärähdys liikaa vai sopivasti?
+5. Näkyvyys: tuntuuko pimeässä piilossa oleva vastustaja reilulta?
+6. Bugit ja yhteysongelmat (liittyminen koodilla, katkeilu).
 
 ## Seuraavaksi (omistajan kanssa sovittu järjestys)
 
-- Aalto 5B: kenttäelementit 3D:hen (ikkunat, seinäaseet, arpalaatikko, automaatit, tehosteet, veriläiskät), zombit kiipeämään ikkunoista näyttävästi, viiston kameran elävöitys. Todennetaan testitilalla.
+- Kaveritestin palautteen korjaukset ja säädöt.
 - Aalto 6: wau-ominaisuudet: tappokamera, tappoloki ja tuntuma, suunnasta kuuluvat äänet, rikottavat lamput.
 - Teemaa muuttavat ideat odottavat omistajan erillistä lupaa: kruunu (ehdotus 8), "varjo paljastaa".
 
