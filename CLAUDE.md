@@ -18,7 +18,8 @@ Muuten saa ehdottaa rohkeasti, yllättäviäkin asioita. **Jokainen uusi ominais
 ## Arkkitehtuuri
 
 - **Simulaatio** (ei DOMia, toimii myös Nodessa): `game.js` (vaiheet, erät, pisteet, `step`), `zombies.js`, `boss.js`, `weapons.js`, `bot.js`, `map.js` + `maps.js`, `geometry.js`, `vision.js`, `constants.js`, `protocol.js`. Pidä nämä DOM-vapaina, ettei simulaattori ja testit hajoa.
-- **Selain:** `host.js` (ajaa simulaatiota ja lähettää tilan), `client.js` (liittyjä, ennustaa oman liikkeen), `render.js`, `sound.js`, `input.js`, `chat.js`, `appearance.js`, `main.js`.
+- **Selain:** `host.js` (ajaa simulaatiota ja lähettää tilan), `client.js` (liittyjä, ennustaa oman liikkeen), `sound.js`, `input.js`, `chat.js`, `appearance.js`, `main.js`.
+- **Piirto** (`src/render3d/`, Three.js `vendor/`-kansiosta): `index.js` on rajapinta, jota `host.js` ja `client.js` kutsuvat (`render`, `handleEvents`, kamera, `screenToWorld`). `scene.js` piirtää 3D-näkymän (`#game`, WebGL) ja `hud.js` HUDin ja ruututekstit 2D-kerrokselle sen päälle (`#hud`). Lisäksi `arena.js` (kenttä), `actors.js` (hahmot), `post.js` (matala resoluutio ja PS1-ilme), `quality.js` (laatutaso) ja `preview.js` (hahmon esikatselu). Näkyvyys tulee `vision.js`:stä samalla säännöllä kuin boteilla: valaisematon vastustaja ei piirry lainkaan.
 - `step(world, inputs, dt)` palauttaa tapahtumat (`events`), joista ääni ja piirto reagoivat.
 - `map.js` pitää nykyistä kenttää moduulin tilassa (`setMap`), ja botit muistavat tilaa (`forgetBot`). Yksi maailma kerrallaan per prosessi.
 - Satunnaisuus tulee suoraan `Math.random`ista. Simulaattori ja testit korvaavat sen siemenellisellä generaattorilla, älä lisää pelikoodiin omaa satunnaislähdettä ilman sopimista.
@@ -28,7 +29,7 @@ Muuten saa ehdottaa rohkeasti, yllättäviäkin asioita. **Jokainen uusi ominais
 
 ## Työskentely
 
-- Uusi asia omaan moduuliinsa, kun mahdollista (kuten `boss.js`). `game.js`, `render.js`, `protocol.js`, `constants.js` ja `index.html` ovat yhteisiä tiedostoja: rinnakkaiset agentit muokkaavat niitä vain, jos tehtävä sen nimenomaan sallii.
+- Uusi asia omaan moduuliinsa, kun mahdollista (kuten `boss.js`). `game.js`, `render3d/scene.js`, `render3d/hud.js`, `protocol.js`, `constants.js` ja `index.html` ovat yhteisiä tiedostoja: rinnakkaiset agentit muokkaavat niitä vain, jos tehtävä sen nimenomaan sallii.
 - Seuraa ympäröivän koodin tyyliä: englanninkieliset nimet, suomenkieliset kommentit, kommentoi miksi, ei mitä.
 - **Verkkoviestin muoto muuttuu** → `PEER_PREFIX` (`protocol.js`) pitää nostaa. Työntekijä ei nosta sitä itse, vaan mainitsee asian raportissaan; koordinaattori nostaa mergen yhteydessä.
 - **Ennen committia:** `python tools/versio.py` (pre-commit-tarkistus vaatii sen). Jos `index.html`:n import-kartta menee mergessä ristiin, ota kumpi tahansa versio ja aja `python tools/versio.py` uudelleen: tiedosto lasketaan sisällöstä.
