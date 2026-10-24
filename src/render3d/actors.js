@@ -222,8 +222,24 @@ export function poseHuman(a, moved, dashing, t) {
 
 const STEP_HZ = 6;  // nykivän animaation ruudunpäivitys
 
+const smooth = (a, b, x) => {
+  const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return k * k * (3 - 2 * k);
+};
+
+// Ikkunasta kiipeämisen sijainti: p = eteneminen 0..1 (simulaation kiipeämisajasta).
+// out = kuinka suuri osa ulkopuolen siirtymästä on jäljellä (1 = ikkunan takana), lift = nosto kynnyksen yli.
+export function climbOffset(p) {
+  return {
+    out: 1 - smooth(0.2, 0.8, p),
+    lift: 0.6 * Math.sin(Math.PI * smooth(0.15, 1, p)),
+  };
+}
+
 // Zombi: askelletut raajat, päänyökkäykset ja toispuolinen ontuminen.
-export function poseZombie(a, moved, t, emerging) {
+// climb = kiipeämisen eteneminen 0..1 tai undefined, kun zombi ei kiipeä.
+// Ensin kädet ja pää kurottavat kynnykselle, sitten vartalo vääntäytyy sisään ja jalat putoavat perässä.
+export function poseZombie(a, moved, t, climb) {
   const p = a.parts;
   const k = Math.floor(t * STEP_HZ + a.seed);
   const h1 = hash(k * 1.7 + a.seed);
@@ -251,8 +267,35 @@ export function poseZombie(a, moved, t, emerging) {
   p.head.rotation.y = snap ? (h1 - 0.5) * 3.0 : (h3 - 0.5) * 0.5;
   p.head.rotation.z = snap ? 0.9 * (h3 - 0.5) : 0.3 * (h2 - 0.5);
   p.head.rotation.x = 0;
+  p.hip.visible = true;
 
-  void emerging;
+  if (climb === undefined) return;
+
+  // w = kuinka vahvasti kiipeämispose peittää kävelyposen (häipyy lopussa)
+  const w = 1 - smooth(0.8, 1, climb);
+  const grip = 1 - smooth(0.35, 0.7, climb);            // kädet kynnyksellä alussa
+  const twist = Math.sin(Math.PI * smooth(0.25, 0.9, climb));
+  const mix = (cur, target) => cur + (target - cur) * w;
+  // Kädet ylös ja eteen kynnystä vasten, nykivä tarttuminen
+  const claw = Math.floor(t * 8 + a.seed) % 2 ? 0.25 : 0;
+  p.armL.rotation.z = mix(p.armL.rotation.z, Math.PI / 2 + 1.0 + claw * grip);
+  p.armR.rotation.z = mix(p.armR.rotation.z, Math.PI / 2 + 1.25 - claw * grip);
+  p.armL.rotation.x = mix(p.armL.rotation.x, -0.25);
+  p.armR.rotation.x = mix(p.armR.rotation.x, 0.25);
+  // Vartalo kaatuu eteen ja vääntyy kynnyksen yli
+  p.body.rotation.z = mix(p.body.rotation.z, -1.05 + 0.55 * smooth(0.45, 0.9, climb));
+  p.body.rotation.x = mix(p.body.rotation.x, Math.sin(t * 11 + a.seed) * 0.7 * twist);
+  p.body.position.y = mix(p.body.position.y, 0.62 + 0.1 * twist);
+  // Pää nousee katsomaan sisään ja nytkähtelee
+  p.head.rotation.z = mix(p.head.rotation.z, 0.7 + (h1 - 0.5) * 0.5);
+  p.head.rotation.y = mix(p.head.rotation.y, (h3 - 0.5) * 0.9);
+  // Jalat ovat ikkunan takana kunnes vartalo on yli, sitten ne roikkuvat ja potkivat
+  p.hip.visible = climb > 0.45;
+  if (climb > 0.45) {
+    const kick = Math.sin(t * 13 + a.seed) * 0.8;
+    p.legL.rotation.z = mix(p.legL.rotation.z, 0.5 + kick);
+    p.legR.rotation.z = mix(p.legR.rotation.z, 0.3 - kick);
+  }
 }
 
 export function poseBoss(a, boss, moved, t) {
