@@ -9,6 +9,7 @@ export const S = 1 / 32;
 const OUTER = 0.8;          // ulkoseinän paksuus
 const WINDOW_LEN = 70;      // sama kuin 2D:n ikkuna (px)
 const WALL_H = 2.1;
+export const LAMP_INTENSITY = 38;
 
 // Teemakohtaiset värit: lattia, seinä, laatikot ja ikkunan laudat.
 const THEMES = {
@@ -141,6 +142,38 @@ function merge(geos) {
   return out;
 }
 
+// Pehmeä pyöreä hehku lattiaan (ikkunat, arpalaatikko, automaatit, tehosteet). Ei valo vaan kuva,
+// joten hehkuja voi olla paljon ilman, että valojen määrä kasvaa.
+let glowTex = null;
+function glowTexture() {
+  if (glowTex) return glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.45)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  glowTex = new THREE.CanvasTexture(c);
+  glowTex.colorSpace = THREE.SRGBColorSpace;
+  return glowTex;
+}
+
+export function floorGlow(color, size, opacity) {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(size, size),
+    new THREE.MeshBasicMaterial({
+      map: glowTexture(), color, transparent: true, opacity, depthWrite: false, fog: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.renderOrder = 1;
+  return mesh;
+}
+
 // Lamppujen valot varataan etukäteen: valojen määrän muuttuminen kääntäisi shaderit uudelleen kesken pelin.
 export function createLampLights(count) {
   const lights = [];
@@ -222,6 +255,8 @@ export function buildArena(lampLights) {
   }
 
   // Ikkunoiden laudat: kaksi vaakalautaa aukossa
+  // Ikkunan punainen hehku sykkii, kun zombi kiipeää sisään (scene.js).
+  const windowGlows = [];
   for (const wn of M.WINDOWS) {
     const horizontal = wn.side === 'top' || wn.side === 'bottom';
     const x = wn.side === 'left' ? -OUTER / 2 : wn.side === 'right' ? W + OUTER / 2 : wn.x * S;
@@ -230,7 +265,13 @@ export function buildArena(lampLights) {
     for (const y of [0.55, 1.2]) {
       add('window', horizontal ? box(len, 0.16, 0.18, x, y, z) : box(0.18, 0.16, len, x, y, z));
     }
+    const glow = floorGlow(0xff281e, 4.4, 0);
+    glow.position.set(x, 0.04, z);
+    glow.visible = false;
+    group.add(glow);
+    windowGlows.push({ win: wn, mesh: glow });
   }
+  group.userData.windowGlows = windowGlows;
 
   const mats = {
     wall: new THREE.MeshLambertMaterial({ map: tex.wall, color: th.wall }),
@@ -263,13 +304,17 @@ export function buildArena(lampLights) {
   group.add(floor);
 
   if (M.BOX) {
+    // Sininen reunus ja hehku, jotta laatikon löytää pimeässä
     const chest = new THREE.Mesh(
       new THREE.BoxGeometry(2, 0.9, 0.95),
-      psx(new THREE.MeshLambertMaterial({ map: tex.crate, color: 0x6b4a22 })),
+      psx(new THREE.MeshLambertMaterial({ map: tex.crate, color: 0x6b4a22, emissive: 0x2a4a70, emissiveIntensity: 0.6 })),
     );
     chest.position.set(M.BOX.x * S, 0.45, M.BOX.y * S);
     chest.castShadow = chest.receiveShadow = true;
     group.add(chest);
+    const glow = floorGlow(0x78b4ff, 3.6, 0.25);
+    glow.position.set(M.BOX.x * S, 0.03, M.BOX.y * S);
+    group.add(glow);
   }
 
   // Juoma-automaattien värillinen hehku erottaa ne pimeässä
@@ -283,6 +328,9 @@ export function buildArena(lampLights) {
     body.position.set(m.x * S, 1.0, m.y * S);
     body.castShadow = body.receiveShadow = true;
     group.add(body);
+    const glow = floorGlow(new THREE.Color(PERKS[m.perk].color), 3.4, 0.22);
+    glow.position.set(m.x * S, 0.03, m.y * S);
+    group.add(glow);
   }
 
   // Seinäaseet: liitupiirros lattiassa
@@ -306,7 +354,7 @@ export function buildArena(lampLights) {
     if (!light) return;
     light.position.set(l.x * S, 3.1, l.y * S);
     light.distance = l.r * 0.85 * S + 3.0;
-    light.intensity = 38;
+    light.intensity = LAMP_INTENSITY;
   });
   for (let i = M.LAMPS.length; i < lampLights.length; i++) {
     lampLights[i].intensity = 0;
@@ -319,7 +367,10 @@ export function buildArena(lampLights) {
 export function disposeGroup(group) {
   group.traverse((o) => {
     if (o.geometry) o.geometry.dispose();
-    // Jaetut tekstuurit (getTextures) säilyvät, vain materiaalit vapautetaan.
-    if (o.material) o.material.dispose();
+    if (!o.material) return;
+    // Jaetut tekstuurit (getTextures, hehku) säilyvät, kenttäkohtaiset vapautetaan.
+    const map = o.material.map;
+    if (map && map !== glowTex && !Object.values(textures || {}).includes(map)) map.dispose();
+    o.material.dispose();
   });
 }

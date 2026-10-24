@@ -7,7 +7,7 @@ import { botInput, forgetBot } from './bot.js';
 import { playEvents, updateAmbient, playChatBlip } from './sound.js';
 import { addChat, sanitizeChat } from './chat.js';
 import { sanitizeLook } from './appearance.js';
-import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
+import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render3d/index.js';
 import {
   PEER_PREFIX, MAX_PLAYERS, SNAPSHOT_EVERY,
   encodeSnapshot, sanitizeName, sanitizeInput, randomRoomCode,

@@ -1,17 +1,22 @@
 // Käynnistys, aula ja pelisilmukka. Peli itse pyörii joko host- tai liittyjäistunnossa.
 
 import { initInput, releaseAll, setInputEnabled } from './input.js';
-import { HATS, PATTERNS, FACES, loadLook, saveLook, drawCharacter } from './appearance.js';
+import { HATS, PATTERNS, FACES, loadLook, saveLook } from './appearance.js';
 import { PLAYER_COLORS } from './constants.js';
 import { setChatOpen, clearChat, CHAT_MAX_LENGTH } from './chat.js';
-import { resize } from './render.js';
+import {
+  initRenderer, resize, drawIdle, initPreview, drawPreview,
+  QUALITY_LEVELS, QUALITY_IDS, getQuality, setQuality, onQualityChange,
+} from './render3d/index.js';
 import { startHost } from './host.js';
 import { startClient } from './client.js';
 import { sanitizeName } from './protocol.js';
 import { initAudio, toggleMute, isMuted } from './sound.js';
 
+// Pelinäkymä piirretään WebGL:llä (#game), HUD ja tekstit 2D-kerrokselle sen päällä (#hud).
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+const hudCanvas = document.getElementById('hud');
+const ctx = hudCanvas.getContext('2d');
 
 const lobby = document.getElementById('lobby');
 const nameInput = document.getElementById('name');
@@ -27,6 +32,8 @@ const copyBtn = document.getElementById('copylink');
 const leaveBtn = document.getElementById('leave');
 const startBtn = document.getElementById('start');
 const muteBtn = document.getElementById('mute');
+const qualitySelect = document.getElementById('quality');
+const qualityBtn = document.getElementById('qualitybtn');
 const chatInput = document.getElementById('chatinput');
 const charPanel = document.getElementById('charpanel');
 const charOpenBtn = document.getElementById('charopen');
@@ -34,12 +41,12 @@ const charBtn = document.getElementById('charbtn');
 const charDoneBtn = document.getElementById('chardone');
 const swatchesEl = document.getElementById('swatches');
 const colorNote = document.getElementById('colornote');
-const preview = document.getElementById('charpreview');
-const previewCtx = preview.getContext('2d');
 chatInput.maxLength = CHAT_MAX_LENGTH;
 
-resize(canvas);
-window.addEventListener('resize', () => resize(canvas));
+initRenderer(canvas);
+initPreview(document.getElementById('charpreview'));
+resize(hudCanvas);
+window.addEventListener('resize', () => resize(hudCanvas));
 // Canvas ei lataa fonttia itse; ladataan valmiiksi kierroslaskuria varten.
 document.fonts?.load('72px Creepster').catch(() => {});
 initInput(canvas);
@@ -219,16 +226,6 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !charPanel.hidden) closeCharPanel();
 });
 
-// Esikatselu: hahmo kääntelee päätään.
-function drawPreview(now) {
-  const t = now / 1000;
-  previewCtx.setTransform(1, 0, 0, 1, 0, 0);
-  previewCtx.clearRect(0, 0, preview.width, preview.height);
-  previewCtx.translate(preview.width / 2, preview.height / 2);
-  previewCtx.scale(3.4, 3.4);
-  drawCharacter(previewCtx, -4, 0, Math.sin(t * 1.3) * 0.7, 16, PLAYER_COLORS[look.color], look, 28, false);
-}
-
 updateMuteButton();
 muteBtn.addEventListener('click', () => {
   toggleMute();
@@ -237,6 +234,22 @@ muteBtn.addEventListener('click', () => {
 });
 function updateMuteButton() {
   muteBtn.textContent = isMuted() ? 'Äänet: pois' : 'Äänet: päällä';
+}
+
+// --- Grafiikan laatu: aulan valinta ja pelin aikana napista kierrättäen ---
+
+for (const id of QUALITY_IDS) qualitySelect.append(new Option(QUALITY_LEVELS[id].name, id));
+qualitySelect.addEventListener('change', () => setQuality(qualitySelect.value));
+qualityBtn.addEventListener('click', () => {
+  const i = QUALITY_IDS.indexOf(getQuality());
+  setQuality(QUALITY_IDS[(i + 1) % QUALITY_IDS.length]);
+  qualityBtn.blur();
+});
+onQualityChange(updateQualityControls);
+updateQualityControls();
+function updateQualityControls() {
+  qualitySelect.value = getQuality();
+  qualityBtn.textContent = `Grafiikka: ${QUALITY_LEVELS[getQuality()].name.toLowerCase()}`;
 }
 
 startBtn.addEventListener('click', () => {
@@ -319,15 +332,9 @@ ticker.onmessage = () => {
 
 function frame(now) {
   const dt = advance(now, true);
-  if (!charPanel.hidden) drawPreview(now);
-  if (session) {
-    session.draw(ctx, dt);
-  } else {
-    const dpr = window.devicePixelRatio || 1;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#0d0f14';
-    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
-  }
+  if (!charPanel.hidden) drawPreview(look, now);
+  if (session) session.draw(ctx, dt);
+  else drawIdle(ctx);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

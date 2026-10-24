@@ -5,7 +5,7 @@
 import { TICK } from './constants.js';
 import { movePlayer, canAct } from './game.js';
 import { readInput } from './input.js';
-import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera } from './render.js';
+import { render, handleEvents, followCamera, cameraTarget, screenToWorld, camera, drawIdle } from './render3d/index.js';
 import { PEER_PREFIX, decodeSnapshot } from './protocol.js';
 import { playEvents, updateAmbient, playChatBlip } from './sound.js';
 import { addChat, sanitizeChat } from './chat.js';
@@ -208,7 +208,8 @@ export function startClient({ name, code, look, onReady, onFail }) {
       if (!ba) continue;
       const x = ba.x + (bb.x - ba.x) * t;
       const y = ba.y + (bb.y - ba.y) * t;
-      bullets.push({ x, y, px: x, py: y, splash: bb.splash });
+      // vx, vy: vain lentosuunta piirtoa varten
+      bullets.push({ x, y, px: x, py: y, vx: bb.x - ba.x, vy: bb.y - ba.y, splash: bb.splash });
     }
 
     const zombies = [];
@@ -216,7 +217,7 @@ export function startClient({ name, code, look, onReady, onFail }) {
       const za = a.zombies.get(id) || zb;
       const x = za.x + (zb.x - za.x) * t;
       const y = za.y + (zb.y - za.y) * t;
-      zombies.push({ x, y, px: x, py: y, angle: lerpAngle(za.angle, zb.angle, t), emerging: zb.emerging });
+      zombies.push({ id, x, y, px: x, py: y, angle: lerpAngle(za.angle, zb.angle, t), emerging: zb.emerging });
     }
 
     // Bossi pehmennetään kuten zombit; hypyn aikana suoraan uusimpaan, ettei lento näytä oudolta.
@@ -263,7 +264,7 @@ export function startClient({ name, code, look, onReady, onFail }) {
     },
     draw(ctx, dt) {
       if (snaps.length === 0 || offset === null) {
-        drawWaiting(ctx);
+        drawIdle(ctx);
         return;
       }
       const { view, due } = buildView(acc / TICK);
@@ -299,13 +300,6 @@ export function startClient({ name, code, look, onReady, onFail }) {
       peer.destroy();
     },
   };
-}
-
-function drawWaiting(ctx) {
-  const dpr = window.devicePixelRatio || 1;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#0d0f14';
-  ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 }
 
 function lerpAngle(a, b, t) {
