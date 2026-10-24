@@ -2,10 +2,13 @@
 
 import * as THREE from '../../vendor/three-0.170.0/three.module.min.js';
 import * as M from '../map.js';
-import { PERKS, WEAPONS } from '../weapons.js';
 import { psx } from './post.js';
+import { S, box, merge, floorGlow, isSharedMap } from './geo.js';
+import { createWindows } from './windows.js';
+import { buildProps } from './props.js';
 
-export const S = 1 / 32;
+export { S, floorGlow };
+
 const OUTER = 0.8;          // ulkoseinän paksuus
 const WINDOW_LEN = 70;      // sama kuin 2D:n ikkuna (px)
 const WALL_H = 2.1;
@@ -97,83 +100,6 @@ function getTextures() {
 
 // --- Geometrian yhdistäminen: yksi piirtokutsu per materiaali ---
 
-// Laatikko, jonka tekstuuri toistuu 2 yksikön välein oikeassa mittakaavassa.
-function box(w, h, d, x, y, z, tile = 2) {
-  const g = new THREE.BoxGeometry(w, h, d);
-  const uv = g.attributes.uv;
-  const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]]; // +x -x +y -y +z -z
-  for (let f = 0; f < 6; f++) {
-    for (let i = 0; i < 4; i++) {
-      const k = f * 4 + i;
-      uv.setXY(k, (uv.getX(k) * dims[f][0]) / tile, (uv.getY(k) * dims[f][1]) / tile);
-    }
-  }
-  g.translate(x, y, z);
-  return g;
-}
-
-function merge(geos) {
-  let vertexCount = 0;
-  let indexCount = 0;
-  for (const g of geos) {
-    vertexCount += g.attributes.position.count;
-    indexCount += g.index.count;
-  }
-  const pos = new Float32Array(vertexCount * 3);
-  const nor = new Float32Array(vertexCount * 3);
-  const uvs = new Float32Array(vertexCount * 2);
-  const idx = new Uint32Array(indexCount);
-  let v = 0;
-  let i = 0;
-  for (const g of geos) {
-    pos.set(g.attributes.position.array, v * 3);
-    nor.set(g.attributes.normal.array, v * 3);
-    uvs.set(g.attributes.uv.array, v * 2);
-    for (let k = 0; k < g.index.count; k++) idx[i + k] = g.index.array[k] + v;
-    v += g.attributes.position.count;
-    i += g.index.count;
-    g.dispose();
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-  out.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-  out.setIndex(new THREE.BufferAttribute(idx, 1));
-  return out;
-}
-
-// Pehmeä pyöreä hehku lattiaan (ikkunat, arpalaatikko, automaatit, tehosteet). Ei valo vaan kuva,
-// joten hehkuja voi olla paljon ilman, että valojen määrä kasvaa.
-let glowTex = null;
-function glowTexture() {
-  if (glowTex) return glowTex;
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.4, 'rgba(255,255,255,0.45)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  glowTex = new THREE.CanvasTexture(c);
-  glowTex.colorSpace = THREE.SRGBColorSpace;
-  return glowTex;
-}
-
-export function floorGlow(color, size, opacity) {
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(size, size),
-    new THREE.MeshBasicMaterial({
-      map: glowTexture(), color, transparent: true, opacity, depthWrite: false, fog: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.renderOrder = 1;
-  return mesh;
-}
-
 // Lamppujen valot varataan etukäteen: valojen määrän muuttuminen kääntäisi shaderit uudelleen kesken pelin.
 export function createLampLights(count) {
   const lights = [];
@@ -183,23 +109,6 @@ export function createLampLights(count) {
     lights.push(l);
   }
   return lights;
-}
-
-function wallBuyDecal(weaponId) {
-  const c = document.createElement('canvas');
-  c.width = 48;
-  c.height = 24;
-  const g = c.getContext('2d');
-  g.fillStyle = '#e8e8d8';
-  const len = 24 + (WEAPONS[weaponId].length ?? 10);
-  const x = (48 - len) / 2;
-  g.fillRect(x, 9, len, 3);
-  g.fillRect(x + len * 0.2, 12, 4, 7);
-  g.fillRect(x - 3, 9, 6, 6);
-  const tex = new THREE.CanvasTexture(c);
-  tex.magFilter = THREE.NearestFilter;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
 }
 
 // Palauttaa ryhmän, joka poistetaan kentän vaihtuessa. Jaetut tekstuurit säilyvät.
@@ -254,7 +163,7 @@ export function buildArena(lampLights) {
     }
   }
 
-  // Ikkunoiden laudat: kaksi vaakalautaa aukossa
+  // Ikkunan kehys: kynnys ja yläpalkki. Laudat ovat omia mesejään (windows.js), jotta ne voivat repeytyä.
   // Ikkunan punainen hehku sykkii, kun zombi kiipeää sisään (scene.js).
   const windowGlows = [];
   for (const wn of M.WINDOWS) {
@@ -262,8 +171,10 @@ export function buildArena(lampLights) {
     const x = wn.side === 'left' ? -OUTER / 2 : wn.side === 'right' ? W + OUTER / 2 : wn.x * S;
     const z = wn.side === 'top' ? -OUTER / 2 : wn.side === 'bottom' ? D + OUTER / 2 : wn.y * S;
     const len = WINDOW_LEN * S;
-    for (const y of [0.55, 1.2]) {
-      add('window', horizontal ? box(len, 0.16, 0.18, x, y, z) : box(0.18, 0.16, len, x, y, z));
+    const sillH = 0.55;
+    const lintelH = WALL_H - 1.8;
+    for (const [h, y] of [[sillH, sillH / 2], [lintelH, WALL_H - lintelH / 2]]) {
+      add('wall', horizontal ? box(len, h, OUTER, x, y, z) : box(OUTER, h, len, x, y, z));
     }
     const glow = floorGlow(0xff281e, 4.4, 0);
     glow.position.set(x, 0.04, z);
@@ -283,6 +194,9 @@ export function buildArena(lampLights) {
     leaf: new THREE.MeshLambertMaterial({ color: 0x1f3a22, flatShading: true }),
     window: new THREE.MeshLambertMaterial({ map: tex.wood, color: th.window }),
   };
+  group.userData.windows = createWindows(group, M.WINDOWS, mats.window, {
+    len: WINDOW_LEN * S, outer: OUTER, w: W, d: D, s: S,
+  });
   for (const [key, geos] of Object.entries(buckets)) {
     const mesh = new THREE.Mesh(merge(geos), psx(mats[key]));
     mesh.castShadow = true;
@@ -303,46 +217,7 @@ export function buildArena(lampLights) {
   floor.receiveShadow = true;
   group.add(floor);
 
-  if (M.BOX) {
-    // Sininen reunus ja hehku, jotta laatikon löytää pimeässä
-    const chest = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 0.9, 0.95),
-      psx(new THREE.MeshLambertMaterial({ map: tex.crate, color: 0x6b4a22, emissive: 0x2a4a70, emissiveIntensity: 0.6 })),
-    );
-    chest.position.set(M.BOX.x * S, 0.45, M.BOX.y * S);
-    chest.castShadow = chest.receiveShadow = true;
-    group.add(chest);
-    const glow = floorGlow(0x78b4ff, 3.6, 0.25);
-    glow.position.set(M.BOX.x * S, 0.03, M.BOX.y * S);
-    group.add(glow);
-  }
-
-  // Juoma-automaattien värillinen hehku erottaa ne pimeässä
-  for (const m of M.PERK_MACHINES) {
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(1.25, 2.0, 1.25),
-      psx(new THREE.MeshLambertMaterial({
-        map: tex.metal, color: 0x555a60, emissive: new THREE.Color(PERKS[m.perk].color), emissiveIntensity: 0.35,
-      })),
-    );
-    body.position.set(m.x * S, 1.0, m.y * S);
-    body.castShadow = body.receiveShadow = true;
-    group.add(body);
-    const glow = floorGlow(new THREE.Color(PERKS[m.perk].color), 3.4, 0.22);
-    glow.position.set(m.x * S, 0.03, m.y * S);
-    group.add(glow);
-  }
-
-  // Seinäaseet: liitupiirros lattiassa
-  for (const b of M.WALL_BUYS) {
-    const decal = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.8, 0.9),
-      new THREE.MeshBasicMaterial({ map: wallBuyDecal(b.weapon), transparent: true, opacity: 0.5, depthWrite: false, fog: false }),
-    );
-    decal.rotation.x = -Math.PI / 2;
-    decal.position.set(b.x * S, 0.03, b.y * S);
-    group.add(decal);
-  }
+  group.userData.props = buildProps(group, tex);
 
   // Lamput: hehkuva pallo ja varattu pistevalo. Valon kantama vastaa vision.js:n 0,6 × r -sääntöä.
   const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd99a });
@@ -370,7 +245,7 @@ export function disposeGroup(group) {
     if (!o.material) return;
     // Jaetut tekstuurit (getTextures, hehku) säilyvät, kenttäkohtaiset vapautetaan.
     const map = o.material.map;
-    if (map && map !== glowTex && !Object.values(textures || {}).includes(map)) map.dispose();
+    if (map && !isSharedMap(map) && !Object.values(textures || {}).includes(map)) map.dispose();
     o.material.dispose();
   });
 }

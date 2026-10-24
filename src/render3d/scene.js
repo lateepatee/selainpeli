@@ -13,15 +13,17 @@ import { lineOfSight } from '../geometry.js';
 import { isLitFor, AURA_RADIUS, FLASHLIGHT_RANGE, FLASHLIGHT_HALF_ANGLE } from '../vision.js';
 import { POWERUPS } from '../weapons.js';
 import { createPipeline } from './post.js';
-import { buildArena, disposeGroup, createLampLights, floorGlow, S, LAMP_INTENSITY } from './arena.js';
+import { buildArena, disposeGroup, createLampLights, S, LAMP_INTENSITY } from './arena.js';
+import { createDecals } from './decals.js';
+import { createPickup, animatePickup, disposePickup } from './pickups.js';
+import { updateCamera, kickCamera } from './camera.js';
 import {
-  createPlayerActor, createZombieActor, createBossActor, poseHuman, poseZombie, poseBoss,
+  createPlayerActor, createZombieActor, createBossActor, poseHuman, poseZombie, poseBoss, climbOffset,
 } from './actors.js';
 import { qualitySettings, onQualityChange } from './quality.js';
 
 const GUN_Y = 1.0;                // tähtäystaso (aseen korkeus)
 const EYE_RANGE = 650;            // zombien silmät näkyvät pimeässä tähän asti (px)
-const CAM_OFFSET = new THREE.Vector3(0, 12.5, 7);
 const FOV = 45;                   // pystysuunta, astetta
 const MAX_FOV = 80;
 const FOG_COLOR = 0x040508;
@@ -56,7 +58,8 @@ const tmpColor = new THREE.Color();
 
 let muzzleFlash = 0;
 let hurt = 0;
-let shake = 0;
+let decals = null;
+let lastFocus = { x: 0, y: 0 };
 let shadowOwner = undefined;   // kenen hahmo ei heitä varjoa (taskulampun omistaja)
 
 export function initScene(canvas) {
@@ -110,6 +113,7 @@ export function initScene(canvas) {
 
   actorGroup = new THREE.Group();
   scene.add(actorGroup);
+  decals = createDecals(scene);
 
   bulletMesh = new THREE.InstancedMesh(
     new THREE.BoxGeometry(0.7, 0.08, 0.08),
@@ -194,32 +198,62 @@ export function sceneEvents(events, localId, viewerId) {
         if (e.by === viewerId) muzzleFlash = 1;
         break;
       case 'wall': burst(e.x, e.y, 0xffd070, 4, 4); break;
-      case 'zhit': burst(e.x, e.y, 0x7a1010, 5, 3.5); break;
+      case 'zhit':
+        burst(e.x, e.y, 0x7a1010, 5, 3.5);
+        decals.add(e.x, e.y, 0x4a0c0c, 0.45, 0.3);
+        break;
       case 'hit':
         burst(e.x, e.y, 0xb01818, 7, 4);
-        if (e.target === localId) hurt = Math.max(hurt, 0.6);
+        decals.add(e.x, e.y, 0x6a0a0a, 0.8, 0.4);
+        if (e.target === localId) {
+          hurt = Math.max(hurt, 0.6);
+          kickCamera(0.3);
+        }
         break;
-      case 'zkill': burst(e.x, e.y, 0x5c7a3a, 12, 5, 4); break;
-      case 'blast': burst(e.x, e.y, 0x76ff03, 20, 8, 5); break;
-      case 'kill': burst(e.x, e.y, 0xb01818, 24, 6, 5); break;
+      case 'zkill':
+        burst(e.x, e.y, 0x5c7a3a, 12, 5, 4);
+        decals.add(e.x, e.y, 0x34501e, 1.1, 0.3);
+        decals.add(e.x, e.y, 0x4a0c0c, 0.6, 22);
+        break;
+      case 'blast':
+        burst(e.x, e.y, 0x76ff03, 20, 8, 5);
+        kickCamera(0.55 * Math.max(0, 1 - Math.hypot(e.x - lastFocus.x, e.y - lastFocus.y) / 450));
+        break;
+      case 'kill':
+        burst(e.x, e.y, 0xb01818, 24, 6, 5);
+        decals.add(e.x, e.y, 0x6a0a0a, 1.7, 0.3);
+        for (let i = 0; i < 3; i++) decals.add(e.x, e.y, 0x5a0808, 0.7, 36);
+        break;
+      case 'roundStart': decals.clear(); break;
       case 'pickup': burst(e.x, e.y, colorHex(POWERUPS[e.kind]?.color), 18, 5, 5); break;
       case 'zflee': burst(e.x, e.y, 0x3b3f36, 12, 3); break;
       case 'bosshurt': burst(e.x, e.y, 0x3a2f45, 5, 3.5); break;
       case 'deflect': burst(e.x, e.y, 0xffffff, 6, 6); break;
       case 'bossRage': burst(e.x, e.y, 0xff3d2e, 40, 8, 6); break;
       case 'bossCounter': burst(e.x, e.y, 0xffb74d, 36, 9, 5); break;
-      case 'bossKill': burst(e.x, e.y, 0xffb74d, 60, 10, 7); break;
+      case 'bossKill':
+        burst(e.x, e.y, 0xffb74d, 60, 10, 7);
+        kickCamera(0.5);
+        break;
       case 'bossLand':
         burst(e.x, e.y, 0x8d6e63, 30, 7, 4);
-        shake = Math.max(shake, 0.5);
+        kickCamera(0.7 * Math.max(0.3, 1 - Math.hypot(e.x - lastFocus.x, e.y - lastFocus.y) / 600));
         break;
       case 'bossHit':
         burst(e.x, e.y, 0xc62828, e.heavy ? 18 : 10, 5);
-        if (e.target === localId) hurt = 1;
+        decals.add(e.x, e.y, 0x6a0a0a, e.heavy ? 1.3 : 0.8, 0.4);
+        if (e.target === localId) {
+          hurt = 1;
+          kickCamera(e.heavy ? 0.55 : 0.35);
+        }
         break;
       case 'zattack':
         burst(e.x, e.y, 0xc62828, 10, 4);
-        if (e.target === localId) hurt = Math.max(hurt, 0.8);
+        decals.add(e.x, e.y, 0x6a0a0a, 0.6, 0.4);
+        if (e.target === localId) {
+          hurt = Math.max(hurt, 0.8);
+          kickCamera(0.25);
+        }
         break;
     }
   }
@@ -227,6 +261,11 @@ export function sceneEvents(events, localId, viewerId) {
 
 function colorHex(css) {
   return css ? parseInt(css.slice(1), 16) : 0xffffff;
+}
+
+// Laudat lentävät tikkuina: väri ja määrä tulevat windows.js:stä.
+function burstWood(x, y, color, count, speed) {
+  burst(x, y, color, count, speed, 3);
 }
 
 let nextParticle = 0;
@@ -428,20 +467,22 @@ export function renderScene(world, viewer, alpha, dt, focus, time) {
         a.emergeAt ??= t;
         frac = Math.max(0, 1 - (t - a.emergeAt) / ZOMBIE_EMERGE_TIME);
       }
-      climbing.push(z);
+      climbing.push({ x: z.x, y: z.y, p: 1 - frac });
     } else {
       a.emergeAt = undefined;
     }
+    // Ulkopuolelta sisään: kädet ja pää ensin kynnykselle, sitten vartalo kynnyksen yli
+    const climb = emerging ? climbOffset(1 - frac) : { out: 0, lift: 0 };
     a.root.position.set(
-      (x - Math.cos(z.angle) * 60 * frac) * S,
-      frac * 0.35,
-      (y - Math.sin(z.angle) * 60 * frac) * S,
+      (x - Math.cos(z.angle) * 60 * climb.out) * S,
+      climb.lift,
+      (y - Math.sin(z.angle) * 60 * climb.out) * S,
     );
     a.root.rotation.y = -z.angle;
     const moved = Math.hypot(x - a.last.x, y - a.last.y) * S;
     a.last.x = x;
     a.last.y = y;
-    poseZombie(a, moved, t, emerging);
+    poseZombie(a, moved, t, emerging ? 1 - frac : undefined);
 
     const los = eye
       ? Math.hypot(x - eye.x, y - eye.y) < EYE_RANGE && lineOfSight(eye.x, eye.y, x, y)
@@ -465,6 +506,10 @@ export function renderScene(world, viewer, alpha, dt, focus, time) {
     if (on) g.mesh.material.opacity = pulse;
   }
 
+  arena.userData.windows.update(climbing, dt, burstWood);
+  arena.userData.props.update(world, t, dt);
+  decals.update(dt);
+
   updateBoss(world.boss, eye, aim, alpha, t);
 
   // Tehosteet lattialla: vilkkuvat ennen katoamista, seinien läpi ei näe
@@ -473,19 +518,12 @@ export function renderScene(world, viewer, alpha, dt, focus, time) {
     seenPu.add(pu.id);
     let m = actors.powerups.get(pu.id);
     if (!m) {
-      const color = new THREE.Color(POWERUPS[pu.type]?.color ?? '#ffffff');
-      m = new THREE.Group();
-      m.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial({ color, fog: false })));
-      const glow = floorGlow(color, 2.8, 0.5);
-      glow.position.y = 0.03;
-      m.add(glow);
+      m = createPickup(pu.type);
       scene.add(m);
       actors.powerups.set(pu.id, m);
     }
-    const cube = m.children[0];
+    animatePickup(m, pu.id, t, pu.life);
     m.position.set(pu.x * S, 0, pu.y * S);
-    cube.position.y = 0.7 + Math.sin(t * 3 + pu.id) * 0.15;
-    cube.rotation.y = t * 2;
     const blink = pu.life < 4 && Math.floor(t * 6) % 2 === 0;
     m.visible = !blink && (!eye || lineOfSight(eye.x, eye.y, pu.x, pu.y));
     if (m.visible) seenPowerups.push(pu);
@@ -493,12 +531,7 @@ export function renderScene(world, viewer, alpha, dt, focus, time) {
   for (const [id, m] of actors.powerups) {
     if (!seenPu.has(id)) {
       scene.remove(m);
-      m.traverse((o) => {
-        if (o.isMesh) {
-          o.geometry.dispose();
-          o.material.dispose();
-        }
-      });
+      disposePickup(m);
       actors.powerups.delete(id);
     }
   }
@@ -550,13 +583,9 @@ export function renderScene(world, viewer, alpha, dt, focus, time) {
   muzzleFlash = Math.max(0, muzzleFlash - dt * 14);
   muzzle.intensity = lit ? muzzleFlash * 70 : 0;
 
-  // Kamera seuraa kohtaa focus (followCamera). Bossin laskeutuminen tärisyttää.
-  shake = Math.max(0, shake - dt * 2);
-  const jx = (Math.random() - 0.5) * shake * 0.6;
-  const jz = (Math.random() - 0.5) * shake * 0.6;
-  cam.position.set(focus.x * S + jx, 0, focus.y * S + jz).add(CAM_OFFSET);
-  cam.lookAt(focus.x * S + jx, 0.4, focus.y * S + jz);
-  cam.updateMatrixWorld();
+  // Kamera seuraa kohtaa focus (followCamera); camera.js lisää vaaran, ennakoinnin ja tärähdykset.
+  lastFocus = focus;
+  updateCamera(cam, world, viewer, focus, vx ?? focus.x, vy ?? focus.y, dt);
 
   hurt = Math.max(0, hurt - dt * 2.2);
   pipeline.render(scene, cam, t, hurt);
