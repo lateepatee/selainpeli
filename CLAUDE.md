@@ -38,8 +38,9 @@ Muuten saa ehdottaa rohkeasti, yllättäviäkin asioita. **Jokainen uusi ominais
 
 ## Testaus
 
-Työkalut ovat tekeillä (ensimmäinen aalto); päivitä tämä osio, kun ne valmistuvat.
+Jokaisessa muutoksessa `npm test` pitää mennä läpi. Pelillisissä muutoksissa lisäksi simulaattoriraportti ennen ja jälkeen, ja selainpelitestaus `agentit/pelitestaus.md`:n mukaan (kun ohje on valmis).
 
+- Testit: `npm test` (`node:test`, `tests/`). Testit käyttävät pelin omia vakioita; tunnettu bugi merkitään `{ todo: '...' }` -testiksi.
 - Paikallinen palvelin: `python -m http.server 8000`, peli osoitteessa http://localhost:8000. Kaksi välilehteä riittää moninpeliin, botit täyttävät loput.
 - Pelilogiikkaa voi ajaa Nodessa suoraan (`package.json`: `"type": "module"`): `createWorld`, `addPlayer`, `startMatch`, ja silmukassa `step(world, inputs, TICK)` sekä `botInput(world, id, TICK)` jokaiselle botille. Neljän botin kokonainen ottelu laskeutuu alle sekunnissa.
 - Tasapainosimulaattori: `node tools/sim/simuloi.mjs --matches 20 --seed 1` (ohje: `tools/sim/README.md`). Aja samalla siemenellä ennen ja jälkeen pelillisen muutoksen ja vertaa raportteja.
