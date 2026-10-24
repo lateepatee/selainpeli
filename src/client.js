@@ -10,6 +10,7 @@ import { PEER_PREFIX, decodeSnapshot } from './protocol.js';
 import { playEvents, updateAmbient, playChatBlip } from './sound.js';
 import { addChat, sanitizeChat } from './chat.js';
 import { setMap, MAP_ID } from './map.js';
+import { wrapAngle } from './geometry.js';
 
 const INTERP_DELAY = 0.1;     // s
 const CONNECT_TIMEOUT = 10000; // ms
@@ -308,8 +309,5 @@ function drawWaiting(ctx) {
 }
 
 function lerpAngle(a, b, t) {
-  let d = b - a;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return a + d * t;
+  return a + wrapAngle(b - a) * t;
 }

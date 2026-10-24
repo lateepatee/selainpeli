@@ -71,19 +71,18 @@ test('kattolampun alla on valoisaa kaukanakin', () => {
   assert.equal(isLitFor(obs, 0, lamp.x, lamp.y), true);
 });
 
-// BUGI: sanitizeInput hyväksyy minkä tahansa äärellisen tähtäyskulman (esim. 1e300), ja isLitFor
-// normalisoi kulman while-silmukalla, joka ei etene niin suurella luvulla (1e300 - 2π === 1e300).
-// render.js kutsuu isLitForia seurattavan pelaajan aimilla, joten kuollut host tai liittyjä, joka
-// katsoo pahantahtoisen pelaajan peliä, jäätyy. Ajetaan erillisessä prosessissa aikarajalla,
-// ettei testisarja jää jumiin.
-test('isLitFor päättyy millä tahansa sanitizeInputin hyväksymällä kulmalla', {
-  todo: 'isLitFor jää ikuiseen silmukkaan, kun vieras lähettää aim: 1e300 (sanitizeInput ei rajaa kulmaa)',
-}, () => {
+// Regressio: valtava tähtäyskulma (esim. 1e300) jumitti isLitForin while-silmukan, ja render.js
+// kutsuu sitä seurattavan pelaajan aimilla. Ajetaan erillisessä prosessissa aikarajalla,
+// ettei testisarja jää jumiin, jos vika palaa.
+test('isLitFor päättyy millä tahansa sanitizeInputin hyväksymällä kulmalla', () => {
   const code = [
     "import { sanitizeInput } from './src/protocol.js';",
     "import { isLitFor } from './src/vision.js';",
     'const aim = sanitizeInput({ seq: 0, aim: 1e300 }).aim;',
     'isLitFor({ x: 0, y: 0 }, aim, 300, 0);',
+    // Myös suoraan annettu valtava kulma (esim. snapshotista) päättyy.
+    'isLitFor({ x: 0, y: 0 }, 1e300, 300, 0);',
+    'isLitFor({ x: 0, y: 0 }, -1e300, 300, 0);',
     "console.log('ok');",
   ].join('\n');
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { cwd: ROOT, encoding: 'utf8', timeout: 2000 });

@@ -6,6 +6,17 @@ export function clamp(v, min, max) {
   return v < min ? min : v > max ? max : v;
 }
 
+// Kulma välille [-π, π] ilman silmukkaa, jotta valtavakaan arvo (esim. 1e300) ei jumita.
+// Välillä jo oleva kulma palautuu sellaisenaan, joten tavallinen peli laskee täsmälleen kuten ennen.
+export function wrapAngle(a) {
+  if (a >= -Math.PI && a <= Math.PI) return a;
+  if (!Number.isFinite(a)) return 0;
+  a %= Math.PI * 2;
+  if (a > Math.PI) a -= Math.PI * 2;
+  else if (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
 export function pointInRect(x, y, r, pad = 0) {
   return x > r.x - pad && x < r.x + r.w + pad && y > r.y - pad && y < r.y + r.h + pad;
 }

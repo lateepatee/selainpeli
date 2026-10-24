@@ -184,6 +184,29 @@ test('sanitizeInput siistii kelvollisen syötteen', () => {
   assert.equal(sanitizeInput({ seq: '12' }).seq, 12, 'numeromerkkijono kelpaa (nykyinen toiminta)');
 });
 
+test('sanitizeInput rajaa tähtäyskulman välille [-π, π]', () => {
+  for (const aim of [1e300, -1e300, 1e20, -7, 100]) {
+    const a = sanitizeInput({ seq: 0, aim }).aim;
+    assert.ok(a >= -Math.PI && a <= Math.PI, `${aim} → ${a}`);
+  }
+  // Kohtuullinen ylitys säilyttää suunnan.
+  const a = sanitizeInput({ seq: 0, aim: -7 }).aim;
+  assert.ok(Math.abs(Math.cos(a) - Math.cos(-7)) < 1e-9 && Math.abs(Math.sin(a) - Math.sin(-7)) < 1e-9, String(a));
+  for (const aim of [Infinity, -Infinity, NaN]) assert.equal(sanitizeInput({ seq: 0, aim }).aim, 0, String(aim));
+  // Välillä oleva kulma kulkee läpi täsmälleen sellaisenaan.
+  for (const aim of [0, 1.25, -3, Math.PI, -Math.PI]) assert.equal(sanitizeInput({ seq: 0, aim }).aim, aim);
+});
+
+test('decodeSnapshot rajaa pelaajan tähtäyskulman', () => {
+  const msg = overNetwork(encodeSnapshot(playingMatch(['host', 'p1']), {}, []));
+  msg.p[0][5] = 1e300;
+  msg.p[1][5] = 'x';
+  const s = decodeSnapshot(msg);
+  const aim0 = s.players[msg.p[0][0]].aim;
+  assert.ok(aim0 >= -Math.PI && aim0 <= Math.PI, String(aim0));
+  assert.equal(s.players[msg.p[1][0]].aim, 0);
+});
+
 test('sanitizeName poistaa ohjausmerkit ja rajaa pituuden', () => {
   assert.equal(sanitizeName('  Matti\u0000\n '), 'Matti');
   assert.equal(sanitizeName('x'.repeat(40)).length, 16);
