@@ -1,239 +1,131 @@
-# Selainpelitestaus Orcan selaimella
+# Selainpelitestaus
 
-Toistettava savutesti, jolla agentti todistaa, että peli toimii oikeassa selaimessa kahdella pelaajalla. Aja se jokaisen pelillisen muutoksen jälkeen omassa worktreessäsi (`npm test` ja simulaattori eivät näe DOMia, verkkoa eikä piirtoa). Kesto noin 5 minuuttia, josta suurin osa on erän vaihtumisen odottamista.
+Toistettava savutesti, jolla agentti todistaa, että peli toimii oikeassa selaimessa kahdella pelaajalla. Aja se jokaisen pelillisen muutoksen jälkeen (`npm test` ja simulaattori eivät näe DOMia, verkkoa eikä piirtoa). Kesto noin 5 minuuttia, josta suurin osa on erän vaihtumisen odottamista.
 
-Testi ei muuta pelikoodia eikä repoa. Kuvakaappaukset ja apuskripti menevät omaan työhakemistoosi (scratchpad tai `$TEMP`), ei worktreehen.
+Testi ei muuta pelikoodia eikä repoa. Kuvakaappaukset ja apuskriptit menevät omaan työhakemistoosi (scratchpad tai `$TEMP`), ei repoon.
+
+> **Työkalusta:** ohje kirjoitettiin ja ajettiin alun perin Orcan sisäisellä selaimella (2026-10-24). Orca poistettiin käytöstä 2026-11-25, joten alla vaiheet on kuvattu työkalusta riippumatta: mitä tehdään, mistä elementistä ja mitä pitää näkyä. Käytä mitä tahansa selainautomaatiota, joka osaa avata kaksi välilehteä, klikata ja täyttää CSS-valitsimella, pitää näppäintä pohjassa, ajaa JS-lausekkeen sivulla, lukea konsolin ja ottaa kuvakaappauksen (esim. Playwright, Clauden selaintyökalut tai headless Chrome + DevTools-protokolla, jolla peliä testattiin jo 2026-10). Kun ajat ohjeen ensimmäisen kerran uudella työkalulla, kirjaa sen tarkat komennot tänne.
 
 ## Mitä tarvitaan
 
-- Orcan CLI (`orca`) ja Orcan sisäinen selain. Selainkomentojen perusohje: `orca skills get orca-cli --reference references/browser.md`.
-- Bash (Windowsissa Git Bash), Python 3 (palvelin ja base64-purku). Pillow on valinnainen kuvien rajaamiseen.
+- Selainautomaatio (ks. yllä) ja Python 3 paikalliseen palvelimeen.
 - Internetyhteys: moninpeli yhdistää PeerJS:n palvelimen (`0.peerjs.com`) kautta. Ilman sitä host näyttää `Ei verkkoyhteyttä (…), vain botit` eikä liittyminen onnistu.
 
 ## Tärkeimmät sudenkuopat (selvitetty kokeilemalla)
 
-**Ruudunpäivitykset hidastuvat.** Kun Orcan selainpaneeli ei ole näkyvissä (agentti ajaa testiä taustalla), Chromium antaa välilehdille vain noin 1,5 `requestAnimationFrame`-kutsua sekunnissa. Orca määrittelee silti `document.hidden = false` (oma, ei-muutettava ominaisuus), joten pelin taustasäie (`main.js`, Worker-ticker) ei käynnisty. Seuraukset: peli etenee ruudunpäivitysten tahdissa ja `dt` katkaistaan 0,25 s:iin, joten simulaatio pyörii noin kolmasosanopeudella. Alle ~0,7 s:n näppäin- tai hiiripainallus voi jäädä kokonaan huomaamatta, koska yksikään ruutu ei osu sen kohdalle. Korjaus testissä: `tahdista`-apufunktio (alla) korvaa sivun `requestAnimationFrame`n Workerin tahdilla, joka ei hidastu. Se ei muuta pelikoodia, vain testivälilehden ympäristöä. Tarkista `fps`-funktiolla (pitää olla yli 50). Jos löydät bugin, joka näkyy vain tahdistimen kanssa, toista se ilman tahdistinta ennen raportointia.
+**Ruudunpäivitykset voivat hidastua taustalla.** Jos selainikkuna ei ole näkyvissä, Chromium voi antaa välilehdille vain noin 1,5 `requestAnimationFrame`-kutsua sekunnissa. Jos selain silti ilmoittaa `document.hidden = false`, pelin taustasäie (`main.js`, Worker-ticker) ei käynnisty. Seuraukset: peli etenee ruudunpäivitysten tahdissa ja `dt` katkaistaan 0,25 s:iin, joten simulaatio pyörii noin kolmasosanopeudella, ja alle ~0,7 s:n painallus voi jäädä huomaamatta. Tarkista ruudunpäivitysten määrä (`fps`, alla; pitää olla yli 50). Jos se on alhainen, aja testivälilehdellä tahdistin, joka korvaa sivun `requestAnimationFrame`n Workerin tahdilla. Se ei muuta pelikoodia. Jos löydät bugin, joka näkyy vain tahdistimen kanssa, toista se ilman tahdistinta ennen raportointia.
 
-| Asia | Toimii | Ei toimi |
-|---|---|---|
-| Näppäimen pito | `orca exec --command "keydown w"` … `"keyup w"` | `"keydown KeyW"` (palauttaa ok, mutta sivulle ei tule tapahtumaa), `"keydown Space"` |
-| Yksittäinen painallus | `orca keypress --key Enter` | `keypress` liikkeelle: pito kestää vain hetken |
-| Ampuminen | `orca mouse move --x X --y Y`, `orca mouse down`, `orca mouse up` (vasen nappi) | välilyönti, ks. yllä |
-| Elementin valinta | CSS-valitsin suoraan: `orca click --element '#host'` | `@e3`-refit vanhenevat ja vaativat `orca snapshot`in samassa välilehdessä ensin |
-| Kaatumiset | `orca exec --command "errors"` | `orca console` ei näytä kaatumisia (uncaught/rejection) |
-| Lataushetken virheet | näkyvät vasta, kun välilehti on ladattu uudelleen (`orca reload`) | uuden välilehden ensimmäinen lataus jää kaappaamatta |
-| Testijärjestys | liike, ammunta ja chat lämmittelyssä (herää 3 s:ssa) | erässä: botit tappavat paikallaan seisovan testaajan sekunneissa, eikä erässä synnytä uudelleen |
-| Odottaminen | `orca wait --page P --text "2 pelaajaa"` DOM-tekstille | `wait --text` canvasille piirretylle (erä, chat, HUD): kysele tilaa tai ota kuva |
+Hyödylliset JS-lausekkeet sivulla:
+
+```js
+// fps: ruudunpäivitykset sekunnissa (2 s mittaus)
+new Promise(r => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 2000) requestAnimationFrame(f); else r(n / 2); }; requestAnimationFrame(f); })
+
+// tahdistin: rAF Workerin 16 ms tahdilla. Katoaa sivun uudelleenlatauksessa, aja uudelleen.
+(() => { if (window.__tahti) return 'jo päällä'; const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 16)']))); const q = []; w.onmessage = () => { const cbs = q.splice(0); const t = performance.now(); for (const cb of cbs) cb(t); }; window.requestAnimationFrame = (cb) => { q.push(cb); return 0; }; window.__tahti = true; return 'tahdistin päällä'; })()
+
+// nykyinen kenttä (lukien; älä kutsu näin saatuja funktioita, esim. setMap, koska se sotkee pelin tilan)
+import('./src/map.js').then(m => m.MAP_NAME)
+
+// huonerivi
+document.getElementById('roomtext').textContent
+```
 
 Lisäksi:
-- Peli piirtää kaiken pelinäkymän canvasille. DOMista luettavissa ovat vain aula (`#lobby`), huonerivi (`#roomtext`), napit ja chat-kenttä. Muu tarkistetaan kuvakaappauksista.
-- Pelitilaa saa luettua vain lukien moduuleista dynaamisella importilla (import-kartta antaa saman moduuli-instanssin kuin pelillä): `import('./src/map.js').then(m => m.MAP_NAME)`. Älä kutsu näin saatuja funktioita (esim. `setMap`), koska se sotkee pelin tilan.
-- `orca exec --command "errors"` kerää virheet koko välilehden ajalta, eikä `errors --clear` tyhjennä sitä. Avaa siksi testiin aina uudet välilehdet. `orca exec --command "console --clear"` tyhjentää konsolin.
-- Orca raportoi kummankin välilehden näkyväksi (`visibilityState === 'visible'`), vaikka ne eivät olisi ruudulla. Siksi tarvitaan tahdistin (yllä). Tahdistin katoaa sivun uudelleenlatauksessa, joten aja `tahdista` uudelleen jokaisen `orca reload`in jälkeen.
-- Kuvakaappauksen koko vaihtelee (esim. 1929×1281 tai 2559×1245) sen mukaan, miten Orcan paneeli on aseteltu. Laske hiiren koordinaatit `window.innerWidth/innerHeight`:sta, älä kuvan koosta.
+- **Näppäimet:** käytä näppäinarvoja `w a s d r q e Shift` (esim. "keydown w"). Orcassa `KeyW`-muotoinen koodi palautti ok mutta sivulle ei tullut tapahtumaa, ja välilyönti ei toiminut; tarkista uudella työkalulla. Liikkeeseen tarvitaan pito (keydown … odota … keyup), yksittäinen painallus kestää liian lyhyen hetken.
+- **Ampuminen:** hiiri kohteeseen, vasen nappi alas, ~0,3 s, ylös. Laske koordinaatit `window.innerWidth/innerHeight`:sta, älä kuvakaappauksen koosta (ne voivat poiketa).
+- **Testijärjestys:** liike, ammunta ja chat **lämmittelyssä** (hahmo herää 3 s:ssa). Erässä botit tappavat paikallaan seisovan testaajan sekunneissa, eikä erässä synnytä uudelleen.
+- **Odottaminen:** DOM-tekstiä (`#roomtext`, aula, napit) voi odottaa suoraan. Canvasille piirrettyä (erä, chat, HUD) ei: kysele tilaa JS-lausekkeella tai ota kuva.
+- **Virheet:** varmista, että työkalu kaappaa myös käsittelemättömät poikkeukset ja hylätyt lupaukset, ei vain `console.log`-viestejä, ja myös sivun ensimmäisen latauksen ajalta (lataa sivu tarvittaessa uudelleen kaappauksen alettua). Avaa testiin aina uudet välilehdet, jotta vanhat virheet eivät sekoitu.
+- Peli piirtää kaiken pelinäkymän canvasille. DOMista luettavissa ovat vain aula (`#lobby`), huonerivi (`#roomtext`), napit ja chat-kenttä. Muu tarkistetaan kuvakaappauksista. Pelitilaa saa luettua dynaamisella importilla (import-kartta antaa saman moduuli-instanssin kuin pelillä).
 - Chat-viesti näkyy canvasilla vain 10 s (`SHOW_TIME`, `chat.js`). Ota kuva heti lähettämisen jälkeen.
-- Kuvat ovat tummia (pimeys on teema). Lue ne Read-työkalulla. Pienet tekstit (chat, HUD) näkyvät parhaiten rajattuna, ks. `rajaa` alla.
+- Kuvat ovat tummia (pimeys on teema). Pienet tekstit (chat, HUD) näkyvät parhaiten rajattuna (chat: vasen alaneljännes, noin 0–40 % leveydestä ja 50–100 % korkeudesta).
 
-## 1. Valmistelu
+## 1. Palvelin
 
-Valitse työhakemisto ja portti. Rinnakkaiset worktreet voivat ajaa omaa palvelintaan, joten tarkista, ettei portti ole varattu, ja että palvelin palvelee juuri sinun worktreetäsi.
+Valitse portti (oletus 8000) ja tarkista, ettei se ole varattu (`curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/` → `000` = vapaa). Käynnistä repon juuressa `python -m http.server 8000` taustalle.
 
-```sh
-export PT_DIR="<oma scratchpad>/pelitestaus"   # ei worktreen sisälle
-export PORT=8000                                # vaihda, jos varattu
-mkdir -p "$PT_DIR"
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:$PORT/   # 000 = vapaa
-```
-
-Kirjoita apufunktiot tiedostoon ja lataa ne jokaisen komennon alussa (`source "$PT_DIR/pt.sh"`), koska agentin shell ei säilytä funktioita eikä muuttujia kutsujen välillä. Aseta siis myös `PT_DIR` ja `PORT` (`export …`) jokaisen alla olevan lohkon alkuun. Välilehtien tunnisteet tallentuvat tiedostoihin `$PT_DIR/H` ja `$PT_DIR/J`, ja `pt.sh` lukee ne muuttujiin `$H` ja `$J`.
+Varmista, että palvelin palvelee juuri tämän kansion tiedostoja:
 
 ```sh
-cat > "$PT_DIR/pt.sh" <<'EOF'
-export PYTHONIOENCODING=utf-8
-URL="http://localhost:${PORT:-8000}/"
-H=$(cat "$PT_DIR/H" 2>/dev/null); J=$(cat "$PT_DIR/J" 2>/dev/null)
-# JS-lauseke sivulla, tulostaa arvon (lupaukset odotetaan).
-js() { orca eval --page "$1" --expression "$2" --json | python -c "import sys,json;d=json.load(sys.stdin);print(d['result']['result'] if d.get('ok') else 'VIRHE: '+d['error']['message'])"; }
-# Ruudunpäivitysten tahdistin: Orcan piilossa oleva selainpaneeli saa vain ~1,5 fps, jolloin peli hidastuu
-# ja lyhyet painallukset katoavat. Korvaa sivun requestAnimationFramen Workerin 16 ms tahdilla (vain testisivulla).
-tahdista() { js "$1" "(() => { if (window.__tahti) return 'jo päällä'; const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 16)']))); const q = []; w.onmessage = () => { const cbs = q.splice(0); const t = performance.now(); for (const cb of cbs) cb(t); }; window.requestAnimationFrame = (cb) => { q.push(cb); return 0; }; window.__tahti = true; return 'tahdistin päällä'; })()"; }
-# Ruudunpäivitykset sekunnissa (2 s mittaus). Pitää olla yli 50 tahdistuksen jälkeen.
-fps() { js "$1" "new Promise(r => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 2000) requestAnimationFrame(f); else r(n / 2); }; requestAnimationFrame(f); })"; }
-# Uusi välilehti + uudelleenlataus (jotta lataushetken virheet ja konsoli kaapataan) + tahdistin.
-uusi_valilehti() {
-  local id; id=$(orca tab create --url "$URL" --json | python -c "import sys,json;print(json.load(sys.stdin)['result']['browserPageId'])")
-  orca wait --page "$id" --load networkidle --json >/dev/null
-  orca reload --page "$id" --json >/dev/null
-  orca wait --page "$id" --load networkidle --json >/dev/null
-  tahdista "$id" >/dev/null
-  echo "$id"
-}
-kartta() { js "$1" "import('./src/map.js').then(m => m.MAP_NAME)"; }
-huone() { js "$1" "document.getElementById('roomtext').textContent"; }
-# Kuvakaappaus: kuva <sivu> <nimi> -> $PT_DIR/<nimi>.jpg
-kuva() { orca screenshot --page "$1" --format jpeg --json | python -c "import sys,json,base64;open(sys.argv[1],'wb').write(base64.b64decode(json.load(sys.stdin)['result']['data']))" "$PT_DIR/$2.jpg"; echo "$PT_DIR/$2.jpg"; }
-# Rajaus suhteellisina osuuksina: rajaa <nimi> <vasen> <ylä> <oikea> <ala>, esim. chat: 0 0.5 0.4 1
-rajaa() { python -c "import sys;from PIL import Image;im=Image.open(sys.argv[1]);w,h=im.size;f=[float(x) for x in sys.argv[3:7]];im.crop((int(f[0]*w),int(f[1]*h),int(f[2]*w),int(f[3]*h))).save(sys.argv[2])" "$PT_DIR/$1.jpg" "$PT_DIR/$1-rajattu.jpg" "$2" "$3" "$4" "$5"; echo "$PT_DIR/$1-rajattu.jpg"; }
-# Näppäimen pito: pida <sivu> <näppäin: w a s d r q e Shift> <sekuntia>
-pida() { orca exec --page "$1" --command "keydown $2" --json >/dev/null; sleep "$3"; orca exec --page "$1" --command "keyup $2" --json >/dev/null; }
-# Kaatumiset ja konsoli yhdestä välilehdestä.
-virheet() {
-  orca exec --page "$1" --command "errors" --json | python -c "import sys,json;e=json.load(sys.stdin)['result']['errors'];print(len(e),'kaatumista');[print(' ',x['text'][:300]) for x in e]"
-  orca console --page "$1" --limit 200 --json | python -c "import sys,json;m=json.load(sys.stdin)['result']['messages'];print(len(m),'konsoliviestiä');[print(' ',x['type'],x['text'][:200]) for x in m]"
-}
-EOF
-```
-
-## 2. Palvelin
-
-Käynnistä palvelin Orcan terminaaliin omassa worktreessäsi. Näin se näkyy omistajalle ja sen saa suljettua kahvalla, vaikka shell vaihtuu kutsujen välillä:
-
-```sh
-orca terminal create --worktree active --title pelipalvelin --command "python -m http.server $PORT" --json \
-  | python -c "import sys,json;print(json.load(sys.stdin)['result']['terminal']['handle'])" > "$PT_DIR/palvelin"
-cat "$PT_DIR/palvelin"                                              # term_…: palvelimen terminaalin kahva
-sleep 1
-```
-
-Varmista, että palvelin palvelee tämän worktreen tiedostoja eikä jonkun toisen:
-
-```sh
-curl -s http://localhost:$PORT/index.html | md5sum; md5sum index.html   # tiivisteiden pitää täsmätä
+curl -s http://localhost:8000/index.html | md5sum; md5sum index.html   # tiivisteiden pitää täsmätä
 ```
 
 Jos `index.html` tai moduulit ovat muuttuneet, aja `python tools/versio.py` ennen testiä. Muuten selain voi käyttää välimuistista vanhaa moduulia.
 
-## 3. Host luo huoneen boteilla
+## 2. Host luo huoneen boteilla (välilehti H)
 
-```sh
-source "$PT_DIR/pt.sh"
-uusi_valilehti > "$PT_DIR/H"; source "$PT_DIR/pt.sh"
-fps $H                                                              # yli 50, muuten aja: tahdista $H
-orca fill  --page $H --element '#name'  --value "Hosti" --json      # nimikenttä
-orca select --page $H --element '#bots' --value 3 --json            # Botteja: 0–3 (oletus 3)
-orca click --page $H --element '#host' --json                       # "Luo huone"
-orca wait  --page $H --text "Huone " --json
-huone $H                                                            # odota: "Huone ABCD · 1 pelaaja"
-kuva $H 01-host-lammittely
-```
+1. Avaa uusi välilehti `http://localhost:8000/`. Tarkista `fps` (yli 50, muuten tahdistin).
+2. Täytä `#name` = `Hosti`, valitse `#bots` = `3` (Botteja 0–3), klikkaa `#host` ("Luo huone").
+3. Odota tekstiä `Huone ` ja lue huonerivi: `Huone ABCD · 1 pelaaja`.
+4. Kuva `01-host-lammittely`.
 
 Odotettu tulos: aula katoaa, yläpalkissa `Huone ABCD · 1 pelaaja` ja napit *Aloita peli*, *Hahmo*, *Äänet*, *Kopioi linkki*, *Poistu*. Kuvassa lämmittelykenttä, pistetaulussa `Lämmittely` ja botit. Lämmittelyssä zombit voivat tappaa hostin heti (`Kuolit · Takaisin peliin 3 s`); se on normaalia.
 
 Jos rivillä lukee `Luodaan huonetta…` yli 10 s tai `Ei verkkoyhteyttä`, PeerJS ei tavoita palvelintaan: kirjaa tämä ja keskeytä moninpeliosa.
 
-## 4. Liittyjä samaan huoneeseen
+## 3. Liittyjä samaan huoneeseen (välilehti J)
 
-```sh
-source "$PT_DIR/pt.sh"
-KOODI=$(huone $H | sed -E 's/^Huone ([A-Z]{4}).*/\1/'); echo $KOODI
-uusi_valilehti > "$PT_DIR/J"; source "$PT_DIR/pt.sh"
-fps $J                                                              # yli 50
-orca fill  --page $J --element '#name' --value "Liittyja" --json
-orca fill  --page $J --element '#code' --value "$KOODI" --json     # "Koodi"
-orca click --page $J --element '#join' --json                       # "Liity"
-orca wait  --page $H --text "2 pelaajaa" --json                     # odota hostin puolelta
-huone $H; huone $J                                                  # "… · 2 pelaajaa" ja "Huone ABCD · ping N ms"
-```
+1. Poimi huonekoodi H:n huonerivistä (`Huone ([A-Z]{4})`).
+2. Avaa toinen uusi välilehti, tarkista `fps`.
+3. Täytä `#name` = `Liittyja`, `#code` = koodi ("Koodi"), klikkaa `#join` ("Liity").
+4. Odota **H:n** riviltä `2 pelaajaa`. Lue molemmat huonerivit: `… · 2 pelaajaa` ja `Huone ABCD · ping N ms`.
 
-Liittyjän rivillä lukee aluksi `ping –`, joten älä odota tekstiä `ping`. Odota hostin `2 pelaajaa`. Vaihtoehtoinen reitti on linkki `http://localhost:$PORT/?huone=ABCD` (koodi täyttyy valmiiksi), mutta paina silti *Liity*.
+Liittyjän rivillä lukee aluksi `ping –`, joten älä odota tekstiä `ping`. Vaihtoehtoinen reitti on linkki `http://localhost:8000/?huone=ABCD` (koodi täyttyy valmiiksi), mutta paina silti *Liity*.
 
-## 5. Liikkuminen ja ampuminen lämmittelyssä (liittyjä)
+## 4. Liikkuminen ja ampuminen lämmittelyssä (liittyjä)
 
-Testaa liike, ammunta ja chat **ennen** kuin painat *Aloita peli*. Erässä ei synnytä uudelleen, ja botit ampuvat paikallaan seisovan testaajan nopeasti: ensimmäisellä ajokerralla liittyjä kuoli noin 2 s lähtölaskennan jälkeen, ennen kuin liiketesti ehti alkaa. Lämmittelyssä hahmo herää 3 s:ssa (`RESPAWN_TIME`).
+Testaa liike, ammunta ja chat **ennen** kuin painat *Aloita peli* (ks. testijärjestys). Liittyjä on vaativampi kuin host, koska sen liike ennustetaan (`movePlayer`) ja hostin pitää hyväksyä se.
 
-Liittyjä on vaativampi kuin host, koska sen liike ennustetaan (`movePlayer`) ja hostin pitää hyväksyä se.
+1. Kuva `03a-ennen` (jos kuvassa lukee "Kuolit · Takaisin peliin", odota 3 s ja ota uusi).
+2. Pidä `w` pohjassa 1 s. Kuva `03b-liikkeen-jalkeen`.
+3. Hiiri kohtaan (3/4 leveydestä, 1/4 korkeudesta), vasen nappi ~0,3 s. Kuva `03c-ammuttu`.
 
-```sh
-source "$PT_DIR/pt.sh"
-kuva $J 03a-ennen          # jos kuvassa lukee "Kuolit · Takaisin peliin", odota 3 s ja ota uusi
-pida $J w 1                                                         # 1 s ylös (myös a, s, d)
-kuva $J 03b-liikkeen-jalkeen
-LEV=$(js $J "innerWidth"); KOR=$(js $J "innerHeight")
-orca mouse move --page $J --x $((LEV*3/4)) --y $((KOR/4)) --json    # tähtää oikealle ylös
-orca mouse down --page $J --json; sleep 0.3; orca mouse up --page $J --json
-kuva $J 03c-ammuttu
-```
+Odotettu tulos: hahmo on siirtynyt suhteessa seiniin. Kamera seuraa pelaajaa, joten vertaa kenttää, älä hahmon paikkaa ruudulla (paitsi kentän reunalla, jossa kamera pysähtyy). Ase osoittaa hiiren suuntaan, ja oikean alakulman ammusmäärä on pienentynyt (pistooli ampuu yhden laukauksen painallusta kohti, 8 → 7).
 
-Odotettu tulos: hahmo on siirtynyt suhteessa seiniin. Kamera seuraa pelaajaa, joten vertaa kenttää, älä hahmon paikkaa ruudulla (paitsi kentän reunalla, jossa kamera pysähtyy). Ase osoittaa hiiren suuntaan, ja oikean alakulman ammusmäärä on pienentynyt (pistooli ampuu yhden laukauksen painallusta kohti, 8 → 7). Halutessasi toista sama hostilla.
+Muut näppäimet samalla tavalla: `r` (lataa), `q` (vaihda asetta), `e` (osta), `Shift` tai hiiren oikea nappi (väistö), kukin ~0,2 s.
 
-Muut näppäimet samalla tavalla: `pida $J r 0.2` (lataa), `pida $J q 0.2` (vaihda asetta), `pida $J e 0.2` (osta), `pida $J Shift 0.2` tai `orca mouse down --button right` (väistö).
+## 5. Chat molempiin suuntiin
 
-## 6. Chat molempiin suuntiin
-
-```sh
-source "$PT_DIR/pt.sh"
-orca keypress --page $J --key Enter --json                          # avaa chat-kentän (#chatinput)
-js $J "document.activeElement.id"                                   # pitää olla chatinput
-orca type --page $J --input "Moi hosti, testiviesti 1" --json
-orca keypress --page $J --key Enter --json                          # lähettää ja sulkee
-sleep 0.5; kuva $H 04-host-chat; rajaa 04-host-chat 0 0.5 0.4 1
-
-orca keypress --page $H --key Enter --json
-orca type --page $H --input "Vastaus 2 <b>ei html</b>" --json
-orca keypress --page $H --key Enter --json
-sleep 0.5; kuva $J 04-liittyja-chat; rajaa 04-liittyja-chat 0 0.5 0.4 1
-```
+1. J: paina Enter (avaa `#chatinput`; `document.activeElement.id` pitää olla `chatinput`), kirjoita `Moi hosti, testiviesti 1`, Enter.
+2. Heti kuva H:sta `04-host-chat`, rajaa chat-alue.
+3. H: Enter, kirjoita `Vastaus 2 <b>ei html</b>`, Enter. Heti kuva J:stä `04-liittyja-chat`, rajaa.
 
 Odotettu tulos: rajatun kuvan vasemmassa alakulmassa näkyy `Liittyja: Moi hosti, testiviesti 1` hostilla ja `Hosti: Vastaus 2 <b>ei html</b>` liittyjällä. HTML näkyy kirjaimellisesti, koska chat piirretään canvasille. Kirjoittaessa peli ei saa liikkua: `releaseAll` vapauttaa näppäimet.
 
-## 7. Peli alkaa: molemmat näkevät saman pelin
+## 6. Peli alkaa: molemmat näkevät saman pelin
 
-```sh
-source "$PT_DIR/pt.sh"
-orca click --page $H --element '#start' --json                      # "Aloita peli" (vain hostilla)
-sleep 1
-kuva $H 05-host-era1; kuva $J 05-liittyja-era1
-kartta $H; kartta $J                                                # sama kentän nimi
-```
+H: klikkaa `#start` ("Aloita peli", vain hostilla). Odota 1 s, kuvat `05-host-era1` ja `05-liittyja-era1`, lue kentän nimi molemmista.
 
 Tarkista kuvista:
-- Kummassakin on keskellä lähtölaskenta ja `Erä 1 · <kenttä>`. Kentän nimi on sama kuin `kartta`-komennon tulos.
+- Kummassakin on keskellä lähtölaskenta ja `Erä 1 · <kenttä>`. Kentän nimi on sama kuin luettu `MAP_NAME`.
 - Pistetaulu (`Pisteet (20)`) listaa samat 5 pelaajaa (Hosti, Liittyja, Botti 1–3), ja oma rivi on merkitty ▸:lla.
 - HUD: 100 HP, 500 $, Pistooli 8 / ∞ (aseet nollautuvat erän alussa).
 
-## 8. Erä vaihtuu
+## 7. Erä vaihtuu
 
-Erä päättyy, kun yksi on jäljellä. Testaajat seisovat paikallaan, joten zombit, botit tai sumu hoitavat sen yleensä 1–2 minuutissa (sumu alkaa 10 s kohdalla ja sulkeutuu 60 s:ssa). Kysele kentän nimeä, älä odota sokkona:
-
-```sh
-source "$PT_DIR/pt.sh"
-ALKU=$(kartta $H)
-for i in $(seq 1 36); do sleep 5; K=$(kartta $H); [ "$K" != "$ALKU" ] && { echo "vaihtui $((i*5)) s: $ALKU -> $K"; break; }; done
-kartta $H; kartta $J
-kuva $H 06-host-era2; kuva $J 06-liittyja-era2
-```
+Erä päättyy, kun yksi on jäljellä. Testaajat seisovat paikallaan, joten zombit, botit tai sumu hoitavat sen yleensä 1–2 minuutissa. Kysele kentän nimeä 5 s välein enintään 3 minuuttia, älä odota sokkona. Kun nimi vaihtuu, lue se molemmista ja ota kuvat `06-host-era2` ja `06-liittyja-era2`.
 
 Odotettu tulos: kenttä vaihtuu kummassakin samaksi, kuvissa `Erä 2 · <kenttä>`, ja pistetaulu on sama molemmilla. Edellisen erän voittaja on saanut `WIN_POINTS` ja on taulun kärjessä. Jos kenttä ei vaihdu 3 minuutissa, ota kuvat ja kirjaa jumi.
 
-## 9. Konsoli ja kaatumiset
+## 8. Konsoli ja kaatumiset
 
-```sh
-source "$PT_DIR/pt.sh"
-virheet $H; virheet $J
-```
+Lue molempien välilehtien kaatumiset ja konsoliviestit.
 
-Odotettu tulos: `0 kaatumista` ja `0 konsoliviestiä` kummassakin. PeerJS ajetaan `debug: 1`:llä, joten se kirjoittaa konsoliin vain virheet. Mikä tahansa `error` tai `warning` on löydös. Kirjaa se sellaisenaan raporttiin.
+Odotettu tulos: 0 kaatumista ja 0 konsoliviestiä kummassakin. PeerJS ajetaan `debug: 1`:llä, joten se kirjoittaa konsoliin vain virheet. Mikä tahansa `error` tai `warning` on löydös. Kirjaa se sellaisenaan raporttiin.
 
-## 10. Poistuminen ja siivous
+## 9. Poistuminen ja siivous
 
-```sh
-source "$PT_DIR/pt.sh"
-orca click --page $J --element '#leave' --json                      # "Poistu"
-sleep 1.5
-js $J "!document.getElementById('lobby').hidden"                    # true: aula takaisin
-huone $H                                                            # "… · 1 pelaaja"
-virheet $H; virheet $J                                              # yhä 0
-orca tab close --page $J --json; orca tab close --page $H --json
-orca terminal close --terminal "$(cat "$PT_DIR/palvelin")" --json   # sammuta palvelin
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:$PORT/   # 000 = suljettu
-```
+1. J: klikkaa `#leave` ("Poistu"), odota 1,5 s. `!document.getElementById('lobby').hidden` pitää olla `true` (aula takaisin), ja H:n huonerivillä `… · 1 pelaaja`.
+2. Virheet uudelleen molemmista: yhä 0.
+3. Sulje välilehdet ja palvelin. `curl` palvelimeen → `000`.
 
 ## Raportti
 
-Liitä `worker_done`-viestiin tai raporttiin tiivis taulukko ja kuvien polut:
+Tiivis taulukko ja kuvien polut:
 
 ```
-Selainpelitestaus (agentit/pelitestaus.md), haara X, PORT 8000
+Selainpelitestaus (agentit/pelitestaus.md), haara X, portti 8000, työkalu Y
 1 huone luotu         OK  Huone ABCD, 3 bottia
 2 liittyminen         OK  ping 1 ms
 3 liike + ammunta     OK  lämmittelyssä liittyjä liikkui, ammukset 8 → 6
@@ -245,48 +137,40 @@ Selainpelitestaus (agentit/pelitestaus.md), haara X, PORT 8000
 Havainnot: …
 ```
 
-Jos muutoksesi koskee jotain tiettyä (uusi ase, kenttä, HUD), lisää oma vaiheensa: vie hahmo paikalle `pida`-komennoilla, ota kuva ja kerro, mitä kuvassa pitää näkyä.
+Jos muutoksesi koskee jotain tiettyä (uusi ase, kenttä, HUD), lisää oma vaiheensa: vie hahmo paikalle näppäinten pidoilla, ota kuva ja kerro, mitä kuvassa pitää näkyä.
 
 ## Mitä ei voi testata automaattisesti
 
 Agentti näkee vain yksittäisiä kuvia ja konsolin. Seuraavat jäävät omistajalle:
 
-- **Äänet:** Web Audio syntetisoi äänet, eikä agentti kuule niitä. Agentti voi tarkistaa vain, ettei äänikoodi kaadu (`virheet`).
+- **Äänet:** Web Audio syntetisoi äänet, eikä agentti kuule niitä. Agentti voi tarkistaa vain, ettei äänikoodi kaadu.
 - **Tuntuma:** ohjauksen viive ja jouhevuus, aseiden voima, väistön ajoitus, zombien uhkaavuus, vaikeustaso ja se, onko peli hauska.
 - **Luettavuus pimeässä:** kuvat ovat yksittäisiä ruutuja. Näkyykö vastustaja ajoissa, erottuvatko värit ja onko HUD selkeä liikkeessä, on silmämääräinen arvio.
 - **Oikea verkko:** molemmat välilehdet ovat samalla koneella (ping 0–1 ms). Pakettihäviö, todellinen viive, NAT ja TURN eivät tule testatuiksi.
-- **Muut selaimet ja laitteet:** Orcan selain on Chromium. Firefox, Safari, mobiili ja heikot koneet (FPS) jäävät testaamatta.
+- **Muut selaimet ja laitteet:** Chromium-pohjainen testi ei kata Firefoxia, Safaria, mobiilia eikä heikkoja koneita (FPS).
 - **Pitkä peli:** koko ottelu pisterajaan asti, Lyhtymies (erästä 3 alkaen, satunnainen) ja kaikki kentät. Nämä kannattaa todistaa simulaattorilla. Selaintesti näyttää vain, että piirto ja verkko toimivat.
 
 ### Miten kysyä omistajalta
 
-Kysy koordinaattorin kautta (`orca orchestration ask`), ei suoraan. Koordinaattori välittää kysymyksen omistajalle. Tee kokeilusta helppo ja kysymyksestä suljettu:
+Tee kokeilusta helppo ja kysymyksestä suljettu:
 
-1. **Mistä kokeilla:** worktree ja haara (Orcan diff-näkymä) sekä komento `python -m http.server 8000` siinä kansiossa, tai se, että palvelin jätetään erikseen pyytäen päälle.
+1. **Mistä kokeilla:** haara ja komento `python -m http.server 8000` siinä kansiossa, tai palvelin jätetään erikseen pyytäen päälle.
 2. **Mitä kokeilla:** enintään 3 asiaa, noin 5 minuuttia, konkreettisesti: "osta haulikko Kartanon seinästä ja ammu zombilaumaa".
 3. **Mitä verrata:** "tuntuuko X erilaiselta kuin mainissa".
-4. **Vastausvaihtoehdot** `--options`-listana, jotta vastaaminen on nopeaa.
+4. **Valmiit vastausvaihtoehdot**, jotta vastaaminen on nopeaa. Esimerkki: "Haulikon rekyyli muutettu. Selaintesti ja npm test OK. Kokeiletko 5 min: osta haulikko ja ammu laumaa. Tuntuuko laukaus: sopiva / liian heikko / liian vahva / en ehdi nyt?"
 
-Esimerkki:
+Älä jää odottamaan tuntumakysymyksen vastausta, jos muu työ on valmis. Merkitse se raporttiin avoimeksi.
 
-```sh
-orca orchestration ask --from <oma terminaali> --timeout-ms 600000 \
-  --question "Haulikon rekyyli muutettu (haara lateepatee/haulikko). Selaintesti ja npm test OK. Kokeiletko 5 min: osta haulikko ja ammu laumaa. Tuntuuko laukaus nyt: liian heikolta, sopivalta vai liian vahvalta? Kuuluuko laukausääni oikein?" \
-  --options "sopiva,liian heikko,liian vahva,en ehdi nyt"
-```
+## Havainnot ohjeen ensimmäisistä ajoista (2026-10-24, Orcan selain)
 
-Älä jää odottamaan tuntumakysymyksen vastausta, jos muu työ on valmis. Merkitse se raporttiin avoimeksi ja anna koordinaattorin päättää.
+Ohje ajettiin kokonaan läpi (huone QSAS, 3 bottia). Kaikki vaiheet menivät läpi: 0 kaatumista ja 0 konsoliviestiä kummassakaan välilehdessä, erä vaihtui 45 s:ssa (Kartano → Varasto). Kaksi aiempaa koeajoa paljasti ohjeeseen kirjatut sudenkuopat (ruudunpäivitysten hidastuminen, testijärjestys).
 
-## Havainnot ohjeen ensimmäisistä ajoista (2026-10-24)
+Pelistä löytyi kaksi asiaa, jotka eivät ole selviä bugeja mutta kannattaa näyttää omistajalle (2D-piirron aikaan; tarkista, koskevatko yhä 3D:tä):
 
-Ohje ajettiin kokonaan läpi lohko kerrallaan sellaisenaan (huone QSAS, 3 bottia). Kaikki vaiheet menivät läpi: 0 kaatumista ja 0 konsoliviestiä kummassakaan välilehdessä, erä vaihtui 45 s:ssa (Kartano → Varasto). Kaksi aiempaa koeajoa paljasti ohjeeseen nyt kirjatut sudenkuopat (ruudunpäivitysten hidastuminen, testijärjestys).
+1. **HUDin päälle piirtyy kenttää.** Varastossa arpalaatikon kehys osui oikean alakulman ammusmäärän (`8 / ∞`) kohdalle, ja teksti oli vaikea lukea. HUDilla ei ollut taustaa.
+2. **Pelaajat erottuvat pimeässä himmeinä.** Pimeyskerroksen peittävyys oli 0,9–0,95, joten Hautausmaalla valaisematon vastustaja näkyi heikkona sinisenä hahmona, vaikka nimi ja HP oli oikein piilotettu. Koskee teemaa ("vastustaja pimeässä on näkymätön"), joten omistaja päättää.
 
-Pelistä löytyi kaksi asiaa, jotka eivät ole selviä bugeja mutta kannattaa näyttää omistajalle:
-
-1. **HUDin päälle piirtyy kenttää.** Varastossa arpalaatikon kehys osui oikean alakulman ammusmäärän (`8 / ∞`) kohdalle, ja teksti oli vaikea lukea. HUDilla ei ole taustaa, joten kentän esineet sekoittuvat siihen.
-2. **Pelaajat erottuvat pimeässä himmeinä.** Pimeyskerroksen peittävyys on 0,9–0,95 (`render.js`, `theme().darkness`), joten Hautausmaalla valaisematon vastustaja näkyi kuvassa heikkona sinisenä hahmona, vaikka nimi ja HP oli oikein piilotettu. Tämä on luultavasti tarkoituksellista, mutta se koskee teemaa ("vastustaja pimeässä on näkymätön"), joten omistaja päättää.
-
-Lisäksi: Botti tappoi paikallaan seisovan liittyjän noin 2 s lähtölaskennan jälkeen. Tämä on odotettua pelattavuutta eikä bugi, mutta siksi testit tehdään lämmittelyssä.
+Lisäksi: botti tappoi paikallaan seisovan liittyjän noin 2 s lähtölaskennan jälkeen. Tämä on odotettua pelattavuutta eikä bugi, mutta siksi testit tehdään lämmittelyssä.
 
 ## Testitila: myöhäinen peli ja bossi ilman koko ottelua
 
@@ -302,18 +186,17 @@ Lisäksi: Botti tappoi paikallaan seisovan liittyjän noin 2 s lähtölaskennan 
 | `botit=N` | huone täytetään N botilla (0–5) ja ottelu alkaa automaattisesti ilman aulaa |
 | `katsele=1` | myös host on botti; kamera seuraa elossa olevaa ja vaihtuu kuoleman jälkeen. Pelaajia on siis `botit`+1 |
 
-Rajoitukset: `era` ja `bossi` toimivat vain, kun ottelu alkaa `botit`-parametrilla. `bossi=1` asettaa sumun kellon bossin syntyaikaan (15 s), joten zombien taso on hieman korkeampi kuin pelkällä `era`lla. Bossi ei synny alle kahdella elossa olevalla.
+Rajoitukset: `era` ja `bossi` toimivat vain, kun ottelu alkaa `botit`-parametrilla. `bossi=1` asettaa sumun kellon bossin syntyaikaan, joten zombien taso on hieman korkeampi kuin pelkällä `era`lla. Bossi ei synny alle kahdella elossa olevalla.
 
-Tila luetaan konsolista: `__testi()` palauttaa `world`-olion (vain testitilassa). Esimerkki:
+Tila luetaan sivulta: `__testi()` palauttaa `world`-olion (vain testitilassa). Esimerkkilauseke:
 
-```sh
-orca eval --page $P --expression "(w => JSON.stringify({round: w.round, zombies: w.zombies.length, boss: w.boss && {hp: w.boss.hp, state: w.boss.state}}))(__testi())" --json
-orca exec --page $P --command "errors" --json
+```js
+(w => JSON.stringify({round: w.round, zombies: w.zombies.length, boss: w.boss && {hp: w.boss.hp, state: w.boss.state}}))(__testi())
 ```
 
-Esimerkkiosoitteet (palvelin kuten kohdassa 1, portti omasi):
+Esimerkkiosoitteet:
 - Myöhäinen peli ja bossi, pelkät botit: `http://localhost:8000/?testi=1&era=8&bossi=1&botit=3&katsele=1&nopeus=4`
 - Ostokset: `http://localhost:8000/?testi=1&era=6&raha=max&botit=2` (pelaa itse, paljon rahaa)
 - Tietty kenttä: `http://localhost:8000/?testi=1&botit=3&kentta=manor`
 
-Tahdistin (`tahdista`) kannattaa ajaa, koska piilossa oleva paneeli antaa vain ~1,5 ruutua sekunnissa. Pienennä `nopeus` arvoon 1–2, jos haluat ottaa kuvakaappauksen tietystä hetkestä.
+Tahdistin kannattaa ajaa, jos ruudunpäivitykset ovat alhaiset. Pienennä `nopeus` arvoon 1–2, jos haluat ottaa kuvakaappauksen tietystä hetkestä.
